@@ -21,7 +21,7 @@ class YamlFrontmatter(FrontmatterCodec):
             return ""
         buf = io.StringIO()
         yaml.safe_dump(meta, buf, sort_keys=False, allow_unicode=True)
-        return f"---\n{buf.getvalu()}---\n"
+        return f"---\n{buf.getvalue()}---\n"
 
 
 class MarkdownNoteCodec(NoteCodec):

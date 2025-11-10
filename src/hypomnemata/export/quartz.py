@@ -44,4 +44,4 @@ class QuartzAdapter(ExportAdapter):
             for link in note.body.links:
                 graph["edges"].append({"source": nid, "target": link.target.id})
 
-        (out / "graph.json").write_text(json.dumps(graph, indent=2) encoding="utf-8")
+        (out / "graph.json").write_text(json.dumps(graph, indent=2), encoding="utf-8")

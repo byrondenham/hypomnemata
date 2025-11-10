@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Protocol, Iterable, Interator, runtime_checkable, Sequence
+from typing import Protocol, Iterable, Iterator, runtime_checkable, Sequence
 
 NoteId = str
 
@@ -34,9 +34,16 @@ class Block:
 @dataclass(frozen=True)
 class LinkTarget:
     id: NoteId
-    target: LinkTarget
+    anchor: Anchor | None = None
     rel: str | None = None  # purely descriptive; no semantic behaviour
     title_text: str | None = None  # "[[id|Title]]" helper
+    range: Range | None = None
+
+
+@dataclass(frozen=True)
+class Link:
+    source: NoteId
+    target: LinkTarget
     range: Range | None = None
 
 

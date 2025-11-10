@@ -13,6 +13,9 @@ class StorageStrategy(Protocol):
     def write_raw(self, id: NoteId, contents: str) -> None:
         pass
 
+    def delete_raw(self, id: NoteId) -> None:
+        pass
+
     def list_all_ids(self) -> Iterable[NoteId]:
         pass
 
