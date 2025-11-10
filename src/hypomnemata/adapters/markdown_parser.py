@@ -1,15 +1,16 @@
 import re
-from ..core.ports import ParserStrategy
+
 from ..core.model import (
-    NoteBody,
+    Anchor,
     Block,
     BlockLabel,
-    Range,
     Link,
     LinkTarget,
-    Anchor,
+    NoteBody,
+    Range,
     Transclusion,
 )
+from ..core.ports import ParserStrategy
 
 LINK_RE = re.compile(r"\[\[(.*?)\]\]")
 TRANS_RE = re.compile(r"!\[\[(.*?)\]\]")
@@ -18,17 +19,14 @@ TRANS_RE = re.compile(r"!\[\[(.*?)\]\]")
 def _parse_target(spec: str) -> LinkTarget:
     # Handles: id | id#Slug | id#^label | rel:foo|id|Text (rel/text ignored for resolution)
     # We only resolve by id + optional anchor.
-    rel = None
-    title = None
     core = spec
     parts = spec.split("|")
     if len(parts) == 2:
-        core, title = parts
+        core, _title = parts
     elif len(parts) == 3:
         # possibly rel:foo|id|title
         if parts[0].startswith("rel:"):
             core = parts[1]
-            title = parts[2]
     if "#^" in core:
         id_, label = core.split("#^", 1)
         return LinkTarget(

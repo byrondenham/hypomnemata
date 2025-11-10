@@ -1,5 +1,6 @@
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
+
 from ..core.ports import StorageStrategy
 
 
@@ -23,8 +24,7 @@ class FsStorage(StorageStrategy):
         if p.exists():
             p.unlink()
 
-    def list_all_ids(self) -> Iterable[str]:
+    def list_all_ids(self) -> list[str]:
         if not self.root.exists():
             return []
-        for p in self.root.glob("*.md"):
-            yield p.stem
+        return [p.stem for p in self.root.glob("*.md")]

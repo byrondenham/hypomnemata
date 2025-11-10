@@ -1,4 +1,5 @@
 import secrets
+
 from ..core.ports import IdGenerator
 
 

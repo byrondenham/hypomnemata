@@ -1,5 +1,7 @@
-from typing import Protocol, AsyncIterable, Iterable, Any
-from .model import NoteId, Note, NoteBody, LinkTarget, Block
+from collections.abc import Iterable
+from typing import Any, Protocol
+
+from .model import Block, Link, LinkTarget, Note, NoteBody, NoteId
 
 
 class StorageStrategy(Protocol):
@@ -79,10 +81,10 @@ class Index(Protocol):
     def rebuild(self) -> None:
         pass
 
-    def links_out(self, id: NoteId) -> list:
+    def links_out(self, id: NoteId) -> list[Link]:
         pass
 
-    def links_in(self, id: NoteId) -> list:
+    def links_in(self, id: NoteId) -> list[Link]:
         pass
 
     def blocks(self, id: NoteId) -> list[Block]:

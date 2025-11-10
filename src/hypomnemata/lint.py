@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Protocol
+
 from .core.model import Note, Range
-from .core.ports import LinkResolver, Index
+from .core.ports import Index, LinkResolver
 
 
 @dataclass

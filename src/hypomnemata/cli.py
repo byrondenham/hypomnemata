@@ -8,11 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .runtime import build_runtime
 from .core.meta import MetaBag
 from .core.model import Note
-from .lint import DeadLinksRule, Finding
 from .export.quartz import QuartzAdapter
+from .lint import DeadLinksRule, Finding
+from .runtime import build_runtime
 
 
 def cmd_id(args: argparse.Namespace, rt: Any) -> int:
@@ -164,10 +164,11 @@ def cmd_lint(args: argparse.Namespace, rt: Any) -> int:
             
             # Check frontmatter ID mismatch
             if "id" in note.meta and note.meta["id"] != nid:
-                all_findings.append((
-                    nid,
-                    Finding("error", f"Frontmatter ID '{note.meta['id']}' doesn't match filename '{nid}'")
-                ))
+                msg = (
+                    f"Frontmatter ID '{note.meta['id']}' "
+                    f"doesn't match filename '{nid}'"
+                )
+                all_findings.append((nid, Finding("error", msg)))
     
     if args.json:
         output = [
@@ -219,10 +220,21 @@ def cmd_rm(args: argparse.Namespace, rt: Any) -> int:
 
 def main() -> None:
     """Main CLI entry point."""
-    parser = argparse.ArgumentParser(prog="hypo", description="Hypomnemata CLI")
-    parser.add_argument("--vault", type=Path, default=Path("./vault"), help="Path to vault directory")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Minimize output")
-    parser.add_argument("--json", action="store_true", help="Machine-readable output")
+    parser = argparse.ArgumentParser(
+        prog="hypo", description="Hypomnemata CLI"
+    )
+    parser.add_argument(
+        "--vault",
+        type=Path,
+        default=Path("./vault"),
+        help="Path to vault directory",
+    )
+    parser.add_argument(
+        "-q", "--quiet", action="store_true", help="Minimize output"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Machine-readable output"
+    )
     
     subparsers = parser.add_subparsers(dest="cmd", required=True)
     
@@ -231,12 +243,23 @@ def main() -> None:
     
     # new command
     parser_new = subparsers.add_parser("new", help="Create a new note")
-    parser_new.add_argument("--meta", action="append", default=[], help="Metadata key=value pairs")
+    parser_new.add_argument(
+        "--meta",
+        action="append",
+        default=[],
+        help="Metadata key=value pairs",
+    )
     parser_new.add_argument("--title", help="Note title")
-    parser_new.add_argument("--edit", action="store_true", help="Open in $EDITOR after creation")
+    parser_new.add_argument(
+        "--edit",
+        action="store_true",
+        help="Open in $EDITOR after creation",
+    )
     
     # open command
-    parser_open = subparsers.add_parser("open", help="Print raw Markdown to stdout")
+    parser_open = subparsers.add_parser(
+        "open", help="Print raw Markdown to stdout"
+    )
     parser_open.add_argument("id", help="Note ID")
     
     # edit command
@@ -246,14 +269,18 @@ def main() -> None:
     # ls command
     parser_ls = subparsers.add_parser("ls", help="List notes with filters")
     parser_ls.add_argument("--grep", help="Filter by content pattern")
-    parser_ls.add_argument("--orphans", action="store_true", help="Show notes with no links")
+    parser_ls.add_argument(
+        "--orphans", action="store_true", help="Show notes with no links"
+    )
     
     # find command
     parser_find = subparsers.add_parser("find", help="Full-text search")
     parser_find.add_argument("query", help="Search query")
     
     # backrefs command
-    parser_backrefs = subparsers.add_parser("backrefs", help="Show incoming links with context")
+    parser_backrefs = subparsers.add_parser(
+        "backrefs", help="Show incoming links with context"
+    )
     parser_backrefs.add_argument("id", help="Note ID")
     
     # lint command

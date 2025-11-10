@@ -1,7 +1,8 @@
-from typing import Iterable
-from .model import Note, NoteId, NoteBody
+from collections.abc import Iterable
+
 from .meta import MetaBag
-from .ports import StorageStrategy, ParserStrategy, NoteCodec
+from .model import Note, NoteId
+from .ports import NoteCodec, ParserStrategy, StorageStrategy
 
 
 class Vault:

@@ -1,6 +1,10 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Protocol, Iterable, Iterator, runtime_checkable, Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .meta import MetaBag
 
 NoteId = str
 
@@ -64,5 +68,5 @@ class NoteBody:
 @dataclass
 class Note:
     id: NoteId
-    meta: "MetaBag"
+    meta: MetaBag
     body: NoteBody

@@ -2,13 +2,14 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from .core.vault import Vault
-from .core.ports import Index
+
 from .adapters.fs_storage import FsStorage
-from .adapters.yaml_codec import YamlFrontmatter, MarkdownNoteCodec
+from .adapters.idgen import HexId
 from .adapters.markdown_parser import MarkdownParser
 from .adapters.resolver_index import DefaultResolver, InMemoryIndex
-from .adapters.idgen import HexId
+from .adapters.yaml_codec import MarkdownNoteCodec, YamlFrontmatter
+from .core.ports import Index
+from .core.vault import Vault
 
 
 @dataclass

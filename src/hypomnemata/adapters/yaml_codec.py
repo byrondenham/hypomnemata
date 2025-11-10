@@ -1,8 +1,11 @@
-import re, io
-import yaml
+import io
+import re
 from typing import Any
-from ..core.ports import FrontmatterCodec, NoteCodec
+
+import yaml
+
 from ..core.model import Note
+from ..core.ports import FrontmatterCodec, NoteCodec
 
 _FM = re.compile(r"^\s*---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 
@@ -28,7 +31,7 @@ class MarkdownNoteCodec(NoteCodec):
     def __init__(self, fm: YamlFrontmatter):
         self.fm = fm
 
-    def decode_file(self, text: str, id: str):
+    def decode_file(self, text: str, id: str) -> tuple[dict[str, Any], str]:
         meta, body = self.fm.decode(text)
         return meta, body
 

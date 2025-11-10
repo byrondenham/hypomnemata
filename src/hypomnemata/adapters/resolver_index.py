@@ -1,6 +1,7 @@
 from collections import defaultdict
-from ..core.ports import LinkResolver, Index
-from ..core.model import LinkTarget, Anchor, Block
+
+from ..core.model import Block, Link, LinkTarget, NoteId
+from ..core.ports import Index, LinkResolver
 from ..core.vault import Vault
 
 
@@ -31,9 +32,9 @@ class DefaultResolver(LinkResolver):
 class InMemoryIndex(Index):
     def __init__(self, vault: Vault):
         self.vault = vault
-        self._links_out = defaultdict(list)
-        self._links_in = defaultdict(list)
-        self._blocks = defaultdict(list)
+        self._links_out: dict[str, list[Link]] = defaultdict(list)
+        self._links_in: dict[str, list[Link]] = defaultdict(list)
+        self._blocks: dict[str, list[Block]] = defaultdict(list)
 
     def rebuild(self) -> None:
         self._links_out.clear()
@@ -48,16 +49,16 @@ class InMemoryIndex(Index):
                 self._links_in[link.target.id].append(link)
             self._blocks[nid] = note.body.blocks
 
-    def links_out(self, id: str):
+    def links_out(self, id: str) -> list[Link]:
         return self._links_out[id]
 
-    def links_in(self, id: str):
+    def links_in(self, id: str) -> list[Link]:
         return self._links_in[id]
 
-    def blocks(self, id: str):
+    def blocks(self, id: str) -> list[Block]:
         return self._blocks[id]
 
-    def search(self, query: str):
+    def search(self, query: str) -> list[NoteId]:
         q = query.lower()
         hits = []
         for nid in self.vault.list_ids():
