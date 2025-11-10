@@ -16,6 +16,34 @@ from .lint import DeadLinksRule, Finding
 from .runtime import build_runtime
 
 
+def cmd_reindex(args: argparse.Namespace, rt: Any) -> int:
+    """Build or repair SQLite index."""
+    from .adapters.sqlite_index import SQLiteIndex
+    
+    if not isinstance(rt.index, SQLiteIndex):
+        print("Error: Index is not a SQLiteIndex", file=sys.stderr)
+        return 1
+    
+    full = getattr(args, 'full', False)
+    use_hash = getattr(args, 'hash', False)
+    
+    if not args.quiet:
+        print(f"Reindexing vault... (full={full}, hash={use_hash})")
+    
+    counts = rt.index.rebuild(full=full, use_hash=use_hash)
+    
+    if not args.quiet:
+        print(f"Scanned: {counts['scanned']}")
+        print(f"Dirty: {counts['dirty']}")
+        print(f"Inserted: {counts['inserted']}")
+        print(f"Updated: {counts['updated']}")
+        print(f"Removed: {counts['removed']}")
+        if counts['failed'] > 0:
+            print(f"Failed: {counts['failed']}")
+    
+    return 0
+
+
 def cmd_id(args: argparse.Namespace, rt: Any) -> int:
     """Print a new random ID."""
     print(rt.idgen.new_id())
@@ -79,27 +107,33 @@ def cmd_edit(args: argparse.Namespace, rt: Any) -> int:
 
 def cmd_ls(args: argparse.Namespace, rt: Any) -> int:
     """List notes with optional filters."""
-    ids = list(rt.vault.list_ids())
+    from .adapters.sqlite_index import SQLiteIndex
     
-    # Filter by grep pattern
-    if args.grep:
-        pattern = args.grep.lower()
-        filtered = []
-        for nid in ids:
-            note = rt.vault.get(nid)
-            if note and pattern in note.body.raw.lower():
-                filtered.append(nid)
-        ids = filtered
-    
-    # Filter for orphans
+    # Filter for orphans using DB if available
     if args.orphans:
-        rt.index.rebuild()
-        filtered = []
-        for nid in ids:
-            # A note is an orphan if it has no incoming or outgoing links
-            if not rt.index.links_in(nid) and not rt.index.links_out(nid):
-                filtered.append(nid)
-        ids = filtered
+        if isinstance(rt.index, SQLiteIndex):
+            ids = rt.index.orphans()
+        else:
+            # Fallback to old method
+            rt.index.rebuild()
+            ids = list(rt.vault.list_ids())
+            filtered = []
+            for nid in ids:
+                if not rt.index.links_in(nid) and not rt.index.links_out(nid):
+                    filtered.append(nid)
+            ids = filtered
+    else:
+        ids = list(rt.vault.list_ids())
+        
+        # Filter by grep pattern
+        if args.grep:
+            pattern = args.grep.lower()
+            filtered = []
+            for nid in ids:
+                note = rt.vault.get(nid)
+                if note and pattern in note.body.raw.lower():
+                    filtered.append(nid)
+            ids = filtered
     
     for nid in sorted(ids):
         print(nid)
@@ -109,16 +143,38 @@ def cmd_ls(args: argparse.Namespace, rt: Any) -> int:
 
 def cmd_find(args: argparse.Namespace, rt: Any) -> int:
     """Full-text search."""
-    rt.index.rebuild()
-    results = rt.index.search(args.query)
-    for nid in sorted(results):
-        print(nid)
+    from .adapters.sqlite_index import SQLiteIndex
+    
+    limit = getattr(args, 'limit', 50)
+    snippets = getattr(args, 'snippets', False)
+    
+    if isinstance(rt.index, SQLiteIndex):
+        results = rt.index.search(args.query, limit=limit)
+        
+        if snippets:
+            for nid in results:
+                snippet = rt.index.snippet(nid, args.query)
+                if snippet:
+                    print(f"{nid}\t{snippet}")
+                else:
+                    print(nid)
+        else:
+            for nid in results:
+                print(nid)
+    else:
+        # Fallback to old method
+        rt.index.rebuild()
+        results = rt.index.search(args.query, limit=limit)
+        for nid in sorted(results):
+            print(nid)
+    
     return 0
 
 
 def cmd_backrefs(args: argparse.Namespace, rt: Any) -> int:
     """Show incoming links with context."""
-    rt.index.rebuild()
+    context = getattr(args, 'context', 2)
+    
     incoming = rt.index.links_in(args.id)
     
     if args.json:
@@ -126,12 +182,15 @@ def cmd_backrefs(args: argparse.Namespace, rt: Any) -> int:
         for link in incoming:
             note = rt.vault.get(link.source)
             if note and link.range:
-                # Extract 2-3 lines of context around the link
+                # Extract context lines around the link
                 lines = note.body.raw[:link.range.start].splitlines()
-                start_line = max(0, len(lines) - 2)
-                context_lines = note.body.raw.splitlines()[start_line:start_line + 3]
+                start_line = max(0, len(lines) - context)
+                end_line = len(lines) + context
+                context_lines = note.body.raw.splitlines()[start_line:end_line]
                 output.append({
                     "source": link.source,
+                    "start": link.range.start,
+                    "end": link.range.end,
                     "context": "\n".join(context_lines),
                 })
         print(json.dumps(output, indent=2))
@@ -140,12 +199,41 @@ def cmd_backrefs(args: argparse.Namespace, rt: Any) -> int:
             note = rt.vault.get(link.source)
             if note and link.range:
                 lines = note.body.raw[:link.range.start].splitlines()
-                start_line = max(0, len(lines) - 2)
-                context_lines = note.body.raw.splitlines()[start_line:start_line + 3]
+                start_line = max(0, len(lines) - context)
+                end_line = len(lines) + context
+                context_lines = note.body.raw.splitlines()[start_line:end_line]
                 if not args.quiet:
                     print(f"\n{link.source}:")
                 for line in context_lines:
                     print(f"  {line}")
+    
+    return 0
+
+
+def cmd_graph(args: argparse.Namespace, rt: Any) -> int:
+    """Export graph data."""
+    from .adapters.sqlite_index import SQLiteIndex
+    
+    if not isinstance(rt.index, SQLiteIndex):
+        print("Error: Graph command requires SQLiteIndex", file=sys.stderr)
+        return 1
+    
+    graph_data = rt.index.graph_data()
+    
+    if getattr(args, 'dot', False):
+        # Output DOT format
+        print("digraph vault {")
+        print('  rankdir=LR;')
+        print('  node [shape=box];')
+        for node in graph_data['nodes']:
+            label = node['title'] or node['id']
+            print(f'  "{node["id"]}" [label="{label}"];')
+        for edge in graph_data['edges']:
+            print(f'  "{edge["source"]}" -> "{edge["target"]}";')
+        print("}")
+    else:
+        # Output JSON format (default)
+        print(json.dumps(graph_data, indent=2))
     
     return 0
 
@@ -303,6 +391,12 @@ def main() -> None:
         help="Path to vault directory",
     )
     parser.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="Path to SQLite index DB (default: vault/.hypo/index.sqlite)",
+    )
+    parser.add_argument(
         "-q", "--quiet", action="store_true", help="Minimize output"
     )
     parser.add_argument(
@@ -313,6 +407,15 @@ def main() -> None:
     
     # id command
     subparsers.add_parser("id", help="Print a new random ID")
+    
+    # reindex command
+    parser_reindex = subparsers.add_parser("reindex", help="Build or repair SQLite index")
+    parser_reindex.add_argument(
+        "--full", action="store_true", help="Force full rebuild"
+    )
+    parser_reindex.add_argument(
+        "--hash", action="store_true", help="Use SHA256 hash for change detection"
+    )
     
     # new command
     parser_new = subparsers.add_parser("new", help="Create a new note")
@@ -349,12 +452,27 @@ def main() -> None:
     # find command
     parser_find = subparsers.add_parser("find", help="Full-text search")
     parser_find.add_argument("query", help="Search query")
+    parser_find.add_argument(
+        "--limit", type=int, default=50, help="Maximum results (default: 50)"
+    )
+    parser_find.add_argument(
+        "--snippets", action="store_true", help="Show snippets with highlights"
+    )
     
     # backrefs command
     parser_backrefs = subparsers.add_parser(
         "backrefs", help="Show incoming links with context"
     )
     parser_backrefs.add_argument("id", help="Note ID")
+    parser_backrefs.add_argument(
+        "--context", type=int, default=2, help="Context lines around link (default: 2)"
+    )
+    
+    # graph command
+    parser_graph = subparsers.add_parser("graph", help="Export graph data")
+    parser_graph.add_argument(
+        "--dot", action="store_true", help="Output in DOT format for Graphviz"
+    )
     
     # lint command
     subparsers.add_parser("lint", help="Validate links and frontmatter")
@@ -383,17 +501,19 @@ def main() -> None:
     args = parser.parse_args()
     
     # Build runtime
-    rt = build_runtime(args.vault)
+    rt = build_runtime(args.vault, db_path=args.db)
     
     # Dispatch to command handlers
     handlers = {
         "id": cmd_id,
+        "reindex": cmd_reindex,
         "new": cmd_new,
         "open": cmd_open,
         "edit": cmd_edit,
         "ls": cmd_ls,
         "find": cmd_find,
         "backrefs": cmd_backrefs,
+        "graph": cmd_graph,
         "lint": cmd_lint,
         "export": cmd_export_quartz,
         "rm": cmd_rm,
