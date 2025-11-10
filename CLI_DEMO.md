@@ -225,6 +225,279 @@ $ cd ~/quartz-site
 $ npx quartz build
 ```
 
+## Configuration
+
+Hypomnemata supports optional configuration via `hypo.toml` to avoid repeating command-line flags.
+
+### Config File Location
+
+The config file is searched in this order:
+1. Path specified with `--config`
+2. `./hypo.toml` in current directory
+3. `vault/hypo.toml` in vault directory
+
+### Example Configuration
+
+```toml
+[vault]
+root = "vault"
+db = ".hypo/index.sqlite"
+
+[id]
+bytes = 6  # 12 hex characters
+
+[export.quartz]
+out = "site"
+katex = { auto = true }
+
+[ui]
+colors = true
+```
+
+CLI flags always override config values:
+```bash
+# Uses vault from config
+$ hypo ls
+
+# Overrides config vault setting
+$ hypo --vault ~/other-vault ls
+```
+
+## Metadata Management
+
+Hypomnemata supports rich metadata via the `hypo meta` commands.
+
+### Set Metadata
+
+```bash
+# Set single values
+$ hypo meta set abc123 core/title="My Custom Title"
+
+# Set multiple values
+$ hypo meta set abc123 \
+  core/title="Research Notes" \
+  user/tags='["research","important"]' \
+  user/difficulty=3
+
+# Supported types: strings, numbers, booleans, JSON objects/arrays
+$ hypo meta set abc123 \
+  user/completed=true \
+  user/rating=4.5 \
+  user/metadata='{"author": "Jane", "year": 2024}'
+```
+
+### Get Metadata
+
+```bash
+# Get all metadata
+$ hypo meta get abc123
+id=abc123
+core/title=My Custom Title
+user/tags=["research", "important"]
+
+# Get specific keys
+$ hypo meta get abc123 --keys core/title user/tags
+core/title=My Custom Title
+user/tags=["research", "important"]
+
+# JSON output
+$ hypo meta get abc123 --json
+{
+  "id": "abc123",
+  "core/title": "My Custom Title",
+  "user/tags": ["research", "important"]
+}
+```
+
+### Show Frontmatter
+
+```bash
+# Pretty-print YAML frontmatter
+$ hypo meta show abc123
+id: abc123
+core/title: My Custom Title
+core/aliases:
+- First Alias
+- Second Alias
+user/tags:
+- research
+- important
+```
+
+### Remove Metadata
+
+```bash
+# Remove one or more keys
+$ hypo meta unset abc123 user/tags user/difficulty
+Removed keys: user/tags, user/difficulty
+```
+
+## Aliases
+
+Aliases allow you to reference notes by memorable names instead of IDs.
+
+### Set Aliases
+
+```bash
+$ hypo meta set abc123 core/aliases='["Quick Reference","QR Guide"]'
+
+# Reindex to make aliases searchable
+$ hypo reindex
+```
+
+### Resolve Aliases to IDs
+
+```bash
+# Exact alias match
+$ hypo resolve "Quick Reference"
+abc123
+
+# Exact title match
+$ hypo resolve "My Custom Title"
+abc123
+
+# Ambiguous or partial match shows candidates
+$ hypo resolve "Quick"
+No exact match for 'Quick'. Candidates:
+  abc123	My Custom Title (alias: Quick Reference)
+  def456	Quick Start Guide
+```
+
+### Search by Alias
+
+```bash
+# Include aliases in search results
+$ hypo find "Reference" --aliases
+abc123
+def456
+```
+
+## Enhanced List and Search
+
+### List with Titles
+
+```bash
+# Tab-separated ID and title
+$ hypo ls --with-titles
+abc123	My Custom Title
+def456	Quick Start Guide
+ghi789	Meeting Notes
+
+# JSON format
+$ hypo ls --format json
+[
+  {"id": "abc123", "title": "My Custom Title"},
+  {"id": "def456", "title": "Quick Start Guide"},
+  {"id": "ghi789", "title": "Meeting Notes"}
+]
+```
+
+### Search with Custom Fields
+
+```bash
+# Display specific fields (tab-separated)
+$ hypo find "research" --fields id,title
+abc123	My Custom Title
+def456	Research Methods
+
+# Combine with snippets
+$ hypo find "quantum" --snippets --fields id,title
+abc123	My Custom Title	...discusses quantum computing...
+def456	Quantum Physics	...introduction to quantum mechanics...
+```
+
+## Vault Diagnostics
+
+Run health checks on your vault:
+
+```bash
+$ hypo doctor
+✓ Vault exists: /home/user/vault
+✓ Vault is writable
+✓ Database exists: /home/user/vault/.hypo/index.sqlite
+✓ Schema version: 2
+✓ Sampled 10 notes, all parsed successfully
+
+Counts:
+  Notes: 42
+  Links: 127
+  Orphans: 3
+
+✓ All checks passed
+```
+
+If issues are found, the command suggests fixes:
+```bash
+$ hypo doctor
+✗ Database does not exist: /home/user/vault/.hypo/index.sqlite
+
+Recommendations:
+  Run: hypo reindex --full
+```
+
+## Enhanced Quartz Export
+
+### Basic Export with Titles
+
+```bash
+$ hypo export quartz ./site
+Exported to ./site
+
+# Exported notes now include title as H1 if available
+$ cat ./site/abc123/index.md
+# My Custom Title
+
+Content of the note...
+```
+
+### Export with Assets
+
+```bash
+# Copy images and assets to export
+$ hypo export quartz ./site --assets-dir vault/assets
+
+$ tree ./site
+./site
+├── abc123/
+│   └── index.md
+├── assets/
+│   ├── image1.png
+│   └── diagram.svg
+└── graph.json
+```
+
+### KaTeX Math Support
+
+If your notes contain math and config has `export.quartz.katex.auto = true`, a `.katex` flag file is created:
+
+```bash
+$ cat vault/math-note.md
+# Math Note
+
+Euler's identity: $e^{i\pi} + 1 = 0$
+
+$ hypo export quartz ./site
+# Creates ./site/.katex if math is detected
+```
+
+### Better Error Messages
+
+Missing transclusions now have clearer error messages:
+
+```markdown
+<!-- Old -->
+> MISSING: note123
+
+<!-- New -->
+> **Hypo:** missing note `note123`
+
+<!-- Old -->
+> MISSING ANCHOR: note123#^label
+
+<!-- New -->
+> **Hypo:** missing anchor `note123#^label`
+```
+
 ## Tips
 
 1. **Set default vault**: Use `--vault` or set up an alias:
@@ -244,7 +517,25 @@ $ npx quartz build
    hypo --json lint | jq '.[] | select(.severity == "error")'
    ```
 
-4. **Piping content**: Create notes from stdin:
+4. **Configuration**: Create `hypo.toml` to avoid repetitive flags:
    ```bash
-   echo "# Quick Note\n\nContent here" | hypo new --title "Quick"
+   # Set up once
+   cat > hypo.toml <<EOF
+   [vault]
+   root = "~/notes"
+   EOF
+   
+   # Then just use
+   hypo ls
+   ```
+
+5. **Aliases for quick access**: Use aliases to reference notes by name:
+   ```bash
+   # Set up aliases
+   hypo meta set abc123 core/aliases='["Weekly Review","Review"]'
+   hypo reindex
+   
+   # Resolve to ID
+   NOTE=$(hypo resolve "Weekly Review")
+   hypo edit "$NOTE"
    ```
