@@ -1,4 +1,5 @@
-from typing import MutableMapping, Iterator, Any
+from collections.abc import Iterator, MutableMapping
+from typing import Any
 
 
 class MetaBag(MutableMapping[str, Any]):
@@ -10,7 +11,7 @@ class MetaBag(MutableMapping[str, Any]):
     The core never *requires* any key besides Note.id existing in filename.
     """
 
-    def __init__(self, initial: dict | None = None):
+    def __init__(self, initial: dict[str, Any] | None = None):
         self._d = dict(initial or {})
 
     # MutableMapping interface

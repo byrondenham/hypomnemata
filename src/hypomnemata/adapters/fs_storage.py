@@ -1,5 +1,6 @@
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
+
 from ..core.ports import StorageStrategy
 
 
@@ -18,6 +19,12 @@ class FsStorage(StorageStrategy):
         self.root.mkdir(parents=True, exist_ok=True)
         self._path(id).write_text(contents, encoding="utf-8")
 
-    def list_all_ids(self) -> Iterable[str]:
-        for p in self.root.glob("*.md"):
-            yield p.stem
+    def delete_raw(self, id: str) -> None:
+        p = self._path(id)
+        if p.exists():
+            p.unlink()
+
+    def list_all_ids(self) -> list[str]:
+        if not self.root.exists():
+            return []
+        return [p.stem for p in self.root.glob("*.md")]
