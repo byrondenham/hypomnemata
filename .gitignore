@@ -49,3 +49,6 @@ Thumbs.db
 # Project specific
 /vault/
 /site/
+
+# SQLite index cache
+.hypo/

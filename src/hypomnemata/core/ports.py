@@ -78,7 +78,7 @@ class Index(Protocol):
     Cache derived state; safe to rebuild at any time.
     """
 
-    def rebuild(self) -> None:
+    def rebuild(self, full: bool = False, use_hash: bool = False) -> Any:
         pass
 
     def links_out(self, id: NoteId) -> list[Link]:
@@ -90,7 +90,7 @@ class Index(Protocol):
     def blocks(self, id: NoteId) -> list[Block]:
         pass
 
-    def search(self, query: str) -> list[NoteId]:
+    def search(self, query: str, limit: int = 50) -> list[NoteId]:
         pass
 
 

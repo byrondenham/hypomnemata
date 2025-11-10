@@ -32,7 +32,7 @@ class InMemoryIndex(Index):
         self._links_in: dict[str, list[Link]] = defaultdict(list)
         self._blocks: dict[str, list[Block]] = defaultdict(list)
 
-    def rebuild(self) -> None:
+    def rebuild(self, full: bool = False, use_hash: bool = False) -> None:
         self._links_out.clear()
         self._links_in.clear()
         self._blocks.clear()
@@ -54,7 +54,7 @@ class InMemoryIndex(Index):
     def blocks(self, id: str) -> list[Block]:
         return self._blocks[id]
 
-    def search(self, query: str) -> list[NoteId]:
+    def search(self, query: str, limit: int = 50) -> list[NoteId]:
         q = query.lower()
         hits = []
         for nid in self.vault.list_ids():
@@ -63,4 +63,4 @@ class InMemoryIndex(Index):
                 continue
             if q in n.body.raw.lower():
                 hits.append(nid)
-        return hits
+        return hits[:limit]
