@@ -28,15 +28,7 @@ class QuartzAdapter(ExportAdapter):
                 continue
             md = note.body.raw
 
-            def link_sub(m: re.Match[str]) -> str:
-                spec = m.group(1)
-                core = spec.split("|")[0].split("#")[0]
-                title = spec.split("|")[-1] if "|" in spec else core
-                return f"[{title}](/{core}/)"
-
-            md2 = LINK.sub(link_sub, md)
-
-            # slice-based transclusion
+            # slice-based transclusion (must be done before link substitution)
             def trans_sub(m: re.Match[str]) -> str:
                 spec = m.group(1)
                 core = spec.split("|")[0]
@@ -69,7 +61,15 @@ class QuartzAdapter(ExportAdapter):
                 
                 return t.body.raw[start:end]
 
-            md2 = TRANS.sub(trans_sub, md2)
+            md2 = TRANS.sub(trans_sub, md)
+
+            def link_sub(m: re.Match[str]) -> str:
+                spec = m.group(1)
+                core = spec.split("|")[0].split("#")[0]
+                title = spec.split("|")[-1] if "|" in spec else core
+                return f"[{title}](/{core}/)"
+
+            md2 = LINK.sub(link_sub, md2)
 
             (out / nid).mkdir(exist_ok=True)
             (out / nid / "index.md").write_text(md2, encoding="utf-8")

@@ -23,6 +23,10 @@ def slugify(text: str) -> str:
     # Lowercase
     text = text.lower()
     
+    # Replace various dash-like characters with regular hyphen
+    # En dash (–), em dash (—), and other dashes
+    text = text.replace('–', '-').replace('—', '-').replace('−', '-')
+    
     # Unicode normalize (NFKD) and drop combining marks
     text = unicodedata.normalize('NFKD', text)
     text = ''.join(c for c in text if not unicodedata.combining(c))
