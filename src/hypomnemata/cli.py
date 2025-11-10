@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from .core.meta import MetaBag
-from .core.model import Note
+from .core.model import Anchor, Note
+from .core.slicer import slice_by_anchor
 from .export.quartz import QuartzAdapter
 from .lint import DeadLinksRule, Finding
 from .runtime import build_runtime
@@ -218,6 +219,78 @@ def cmd_rm(args: argparse.Namespace, rt: Any) -> int:
     return 0
 
 
+def cmd_yank(args: argparse.Namespace, rt: Any) -> int:
+    """Print a slice of a note based on anchor."""
+    # Parse ref into id and optional anchor
+    ref = args.ref
+    anchor = None
+    
+    if "#" in ref:
+        nid, anchor_str = ref.split("#", 1)
+        if anchor_str.startswith("^"):
+            # Block label
+            anchor = Anchor(kind="block", value=anchor_str[1:])
+        else:
+            # Heading slug
+            anchor = Anchor(kind="heading", value=anchor_str)
+    else:
+        nid = ref
+    
+    # Get note
+    note = rt.vault.get(nid)
+    if note is None:
+        print(f"Note {nid} not found", file=sys.stderr)
+        return 1
+    
+    # Get slice
+    start, end = slice_by_anchor(note, anchor)
+    
+    if start == end:
+        # Empty slice means anchor not found
+        if anchor:
+            anchor_repr = f"^{anchor.value}" if anchor.kind == "block" else anchor.value
+            print(f"Anchor #{anchor_repr} not found in note {nid}", file=sys.stderr)
+            return 1
+        # Shouldn't happen for no anchor case, but handle it
+        return 0
+    
+    slice_text = note.body.raw[start:end]
+    
+    # Handle --plain flag for fenced blocks
+    if args.plain and slice_text.strip().startswith("```"):
+        lines = slice_text.splitlines(keepends=True)
+        # Remove first and last lines if they are fence markers
+        if len(lines) >= 2 and lines[0].strip().startswith("```") and lines[-1].strip() == "```":
+            slice_text = "".join(lines[1:-1])
+        elif len(lines) >= 2 and lines[0].strip().startswith("```"):
+            # Handle case where last line might not be just ```
+            for i in range(len(lines) - 1, 0, -1):
+                if lines[i].strip() == "```":
+                    slice_text = "".join(lines[1:i])
+                    break
+    
+    # Handle --context flag
+    if args.context > 0:
+        # Add N lines before and after
+        all_lines = note.body.raw.splitlines(keepends=True)
+        slice_lines = slice_text.splitlines(keepends=True)
+        
+        # Find where slice starts in the full text
+        slice_start_line = 0
+        for i, line in enumerate(all_lines):
+            if slice_lines and line == slice_lines[0]:
+                slice_start_line = i
+                break
+        
+        start_line = max(0, slice_start_line - args.context)
+        end_line = min(len(all_lines), slice_start_line + len(slice_lines) + args.context)
+        
+        slice_text = "".join(all_lines[start_line:end_line])
+    
+    print(slice_text, end="")
+    return 0
+
+
 def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -297,6 +370,16 @@ def main() -> None:
     parser_rm.add_argument("id", help="Note ID")
     parser_rm.add_argument("--yes", action="store_true", help="Skip confirmation")
     
+    # yank command
+    parser_yank = subparsers.add_parser("yank", help="Print a slice of a note")
+    parser_yank.add_argument("ref", help="Note reference: <id> or <id>#<anchor>")
+    parser_yank.add_argument(
+        "--plain", action="store_true", help="Strip outermost fences for fenced blocks"
+    )
+    parser_yank.add_argument(
+        "--context", type=int, default=0, help="Include N lines before/after (default: 0)"
+    )
+    
     args = parser.parse_args()
     
     # Build runtime
@@ -314,6 +397,7 @@ def main() -> None:
         "lint": cmd_lint,
         "export": cmd_export_quartz,
         "rm": cmd_rm,
+        "yank": cmd_yank,
     }
     
     handler = handlers.get(args.cmd)
