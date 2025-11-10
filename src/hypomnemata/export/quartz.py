@@ -3,7 +3,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..core.model import Anchor
 from ..core.ports import ExportAdapter
+from ..core.slicer import slice_by_anchor
 from ..core.vault import Vault
 
 LINK = re.compile(r"\[\[(.*?)\]\]")
@@ -26,22 +28,48 @@ class QuartzAdapter(ExportAdapter):
                 continue
             md = note.body.raw
 
+            # slice-based transclusion (must be done before link substitution)
+            def trans_sub(m: re.Match[str]) -> str:
+                spec = m.group(1)
+                core = spec.split("|")[0]
+                
+                # Parse target id and anchor
+                anchor = None
+                if "#^" in core:
+                    target_id, label = core.split("#^", 1)
+                    anchor = Anchor(kind="block", value=label.strip())
+                elif "#" in core:
+                    target_id, slug = core.split("#", 1)
+                    anchor = Anchor(kind="heading", value=slug.strip())
+                else:
+                    target_id = core
+                
+                target_id = target_id.strip()
+                
+                # Get target note
+                t = self.vault.get(target_id)
+                if not t:
+                    return f"> MISSING: {target_id}\n"
+                
+                # Get slice
+                start, end = slice_by_anchor(t, anchor)
+                
+                if start == end and anchor:
+                    # Anchor not found
+                    anchor_repr = f"^{anchor.value}" if anchor.kind == "block" else anchor.value
+                    return f"> MISSING ANCHOR: {target_id}#{anchor_repr}\n"
+                
+                return t.body.raw[start:end]
+
+            md2 = TRANS.sub(trans_sub, md)
+
             def link_sub(m: re.Match[str]) -> str:
                 spec = m.group(1)
                 core = spec.split("|")[0].split("#")[0]
                 title = spec.split("|")[-1] if "|" in spec else core
                 return f"[{title}](/{core}/)"
 
-            md2 = LINK.sub(link_sub, md)
-
-            # naive transclusion: inline raw of target (anchor resolution omitted)
-            def trans_sub(m: re.Match[str]) -> str:
-                core = m.group(1).split("|")[0]
-                target_id = core.split("#")[0]
-                t = self.vault.get(target_id)
-                return t.body.raw if t else f"> MISSING: {target_id}\n"
-
-            md2 = TRANS.sub(trans_sub, md2)
+            md2 = LINK.sub(link_sub, md2)
 
             (out / nid).mkdir(exist_ok=True)
             (out / nid / "index.md").write_text(md2, encoding="utf-8")

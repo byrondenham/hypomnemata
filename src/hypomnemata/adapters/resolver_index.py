@@ -2,6 +2,7 @@ from collections import defaultdict
 
 from ..core.model import Block, Link, LinkTarget, NoteId
 from ..core.ports import Index, LinkResolver
+from ..core.slicer import find_heading_by_slug, find_label
 from ..core.vault import Vault
 
 
@@ -18,15 +19,10 @@ class DefaultResolver(LinkResolver):
         note = self.vault.get(target.id)
         if not note:
             return False
-        labels = {b.label.name for b in note.body.blocks if b.label}
-        slugs = {
-            (b.heading_text or "").strip().lower().replace(" ", "-")
-            for b in note.body.blocks
-            if b.kind == "heading"
-        }
         if target.anchor.kind == "block":
-            return target.anchor.value in labels
-        return target.anchor.value.lower() in slugs
+            return find_label(note, target.anchor.value) is not None
+        # heading anchor
+        return find_heading_by_slug(note, target.anchor.value) is not None
 
 
 class InMemoryIndex(Index):

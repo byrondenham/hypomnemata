@@ -32,6 +32,8 @@ class Block:
     range: Range
     label: BlockLabel | None = None
     heading_text: str | None = None
+    heading_level: int | None = None  # 1-6 for headings
+    heading_slug: str | None = None  # slugified heading text
     fence_info: str | None = None
 
 
