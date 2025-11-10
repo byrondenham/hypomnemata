@@ -208,7 +208,7 @@ After transclusion.
         exported = (out_dir / "source456" / "index.md").read_text()
         
         # Should have error message
-        assert "> MISSING: missing123" in exported
+        assert "> **Hypo:** missing note `missing123`" in exported
 
 
 def test_quartz_transclusion_missing_anchor():
@@ -255,4 +255,4 @@ After transclusion.
         exported = (out_dir / "source456" / "index.md").read_text()
         
         # Should have error message with anchor
-        assert "> MISSING ANCHOR: target123#^missing" in exported
+        assert "> **Hypo:** missing anchor `target123#^missing`" in exported

@@ -135,8 +135,52 @@ def cmd_ls(args: argparse.Namespace, rt: Any) -> int:
                     filtered.append(nid)
             ids = filtered
     
-    for nid in sorted(ids):
-        print(nid)
+    # Sort IDs
+    ids = sorted(ids)
+    
+    # Handle different output formats
+    if getattr(args, 'format', None) == 'json':
+        # JSON output with titles
+        if isinstance(rt.index, SQLiteIndex):
+            conn = rt.index._conn()
+            try:
+                result = []
+                for nid in ids:
+                    row = conn.execute(
+                        "SELECT title FROM notes WHERE id = ?",
+                        (nid,)
+                    ).fetchone()
+                    title = row[0] if row else ""
+                    result.append({"id": nid, "title": title})
+                print(json.dumps(result, indent=2))
+            finally:
+                conn.close()
+        else:
+            # Fallback without titles
+            result = [{"id": nid, "title": ""} for nid in ids]
+            print(json.dumps(result, indent=2))
+    elif getattr(args, 'with_titles', False):
+        # Tab-separated output
+        if isinstance(rt.index, SQLiteIndex):
+            conn = rt.index._conn()
+            try:
+                for nid in ids:
+                    row = conn.execute(
+                        "SELECT title FROM notes WHERE id = ?",
+                        (nid,)
+                    ).fetchone()
+                    title = row[0] if row else ""
+                    print(f"{nid}\t{title}")
+            finally:
+                conn.close()
+        else:
+            # Fallback without titles
+            for nid in ids:
+                print(f"{nid}\t")
+    else:
+        # Default: just IDs
+        for nid in ids:
+            print(nid)
     
     return 0
 
@@ -147,11 +191,49 @@ def cmd_find(args: argparse.Namespace, rt: Any) -> int:
     
     limit = getattr(args, 'limit', 50)
     snippets = getattr(args, 'snippets', False)
+    aliases = getattr(args, 'aliases', False)
+    fields = getattr(args, 'fields', None)
     
     if isinstance(rt.index, SQLiteIndex):
-        results = rt.index.search(args.query, limit=limit)
+        results = list(rt.index.search(args.query, limit=limit))
         
-        if snippets:
+        # Add alias matches if requested
+        if aliases:
+            conn = rt.index._conn()
+            try:
+                alias_rows = conn.execute(
+                    "SELECT DISTINCT note_id FROM kv WHERE key = 'core/alias' AND value LIKE ?",
+                    (f"%{args.query}%",)
+                ).fetchall()
+                
+                for row in alias_rows:
+                    if row[0] not in results:
+                        results.append(row[0])
+            finally:
+                conn.close()
+        
+        # Output with fields
+        if fields:
+            field_list = [f.strip() for f in fields.split(',')]
+            conn = rt.index._conn()
+            try:
+                for nid in results:
+                    values = []
+                    for field in field_list:
+                        if field == 'id':
+                            values.append(nid)
+                        elif field == 'title':
+                            row = conn.execute(
+                                "SELECT title FROM notes WHERE id = ?",
+                                (nid,)
+                            ).fetchone()
+                            values.append(row[0] if row else "")
+                        else:
+                            values.append("")
+                    print("\t".join(values))
+            finally:
+                conn.close()
+        elif snippets:
             for nid in results:
                 snippet = rt.index.snippet(nid, args.query)
                 if snippet:
@@ -281,7 +363,24 @@ def cmd_lint(args: argparse.Namespace, rt: Any) -> int:
 def cmd_export_quartz(args: argparse.Namespace, rt: Any) -> int:
     """Export to Quartz format with graph.json."""
     outdir = Path(args.outdir)
-    adapter = QuartzAdapter(rt.vault, outdir)
+    
+    # Get assets dir if specified
+    assets_dir = None
+    if getattr(args, 'assets_dir', None):
+        assets_dir = Path(args.assets_dir)
+    
+    # Get KaTeX auto setting from config or args
+    katex_auto = False
+    if rt.config.export.quartz:
+        katex_auto = rt.config.export.quartz.katex.auto
+    
+    adapter = QuartzAdapter(
+        rt.vault,
+        outdir,
+        index=rt.index,
+        assets_dir=assets_dir,
+        katex_auto=katex_auto,
+    )
     adapter.export_all()
     if not args.quiet:
         print(f"Exported to {outdir}")
@@ -379,22 +478,340 @@ def cmd_yank(args: argparse.Namespace, rt: Any) -> int:
     return 0
 
 
+def cmd_meta_get(args: argparse.Namespace, rt: Any) -> int:
+    """Get metadata values from a note."""
+    note = rt.vault.get(args.id)
+    if note is None:
+        print(f"Note {args.id} not found", file=sys.stderr)
+        return 1
+    
+    if args.keys:
+        # Print specific keys
+        for key in args.keys:
+            if key in note.meta:
+                value = note.meta[key]
+                if args.json:
+                    print(json.dumps({key: value}))
+                else:
+                    print(f"{key}={value}")
+            elif not args.quiet:
+                print(f"Key '{key}' not found", file=sys.stderr)
+    else:
+        # Print all metadata
+        if args.json:
+            print(json.dumps(dict(note.meta)))
+        else:
+            for key, value in note.meta.items():
+                print(f"{key}={value}")
+    
+    return 0
+
+
+def cmd_meta_set(args: argparse.Namespace, rt: Any) -> int:
+    """Set metadata values in a note."""
+    note = rt.vault.get(args.id)
+    if note is None:
+        print(f"Note {args.id} not found", file=sys.stderr)
+        return 1
+    
+    # Parse key=value pairs
+    for kv in args.pairs:
+        if "=" not in kv:
+            print(f"Invalid format: {kv}. Expected key=value", file=sys.stderr)
+            return 1
+        
+        key, _, value_str = kv.partition("=")
+        key = key.strip()
+        value_str = value_str.strip()
+        
+        # Try to parse value intelligently
+        value: Any = value_str
+        
+        # Check for JSON objects/arrays
+        if value_str.startswith("{") or value_str.startswith("["):
+            try:
+                value = json.loads(value_str)
+            except json.JSONDecodeError:
+                pass  # Use as string
+        # Check for boolean
+        elif value_str.lower() in ("true", "false"):
+            value = value_str.lower() == "true"
+        # Check for numbers
+        else:
+            try:
+                if "." in value_str:
+                    value = float(value_str)
+                else:
+                    value = int(value_str)
+            except ValueError:
+                pass  # Use as string
+        
+        note.meta[key] = value
+    
+    # Save note
+    rt.vault.put(note)
+    
+    if not args.quiet:
+        print(f"Updated metadata for {args.id}")
+    
+    return 0
+
+
+def cmd_meta_unset(args: argparse.Namespace, rt: Any) -> int:
+    """Remove metadata keys from a note."""
+    note = rt.vault.get(args.id)
+    if note is None:
+        print(f"Note {args.id} not found", file=sys.stderr)
+        return 1
+    
+    removed = []
+    for key in args.keys:
+        if key in note.meta:
+            del note.meta[key]
+            removed.append(key)
+    
+    if removed:
+        rt.vault.put(note)
+        if not args.quiet:
+            print(f"Removed keys: {', '.join(removed)}")
+    elif not args.quiet:
+        print("No keys removed")
+    
+    return 0
+
+
+def cmd_meta_show(args: argparse.Namespace, rt: Any) -> int:
+    """Pretty-print frontmatter for a note."""
+    import yaml
+    
+    note = rt.vault.get(args.id)
+    if note is None:
+        print(f"Note {args.id} not found", file=sys.stderr)
+        return 1
+    
+    if note.meta:
+        print(yaml.dump(dict(note.meta), sort_keys=False, allow_unicode=True), end="")
+    else:
+        print("# No metadata")
+    
+    return 0
+
+
+def cmd_resolve(args: argparse.Namespace, rt: Any) -> int:
+    """Resolve text to note ID via aliases or title."""
+    from .adapters.sqlite_index import SQLiteIndex
+    
+    text = args.text
+    
+    if not isinstance(rt.index, SQLiteIndex):
+        print("Error: Resolve command requires SQLiteIndex", file=sys.stderr)
+        return 1
+    
+    conn = rt.index._conn()
+    try:
+        # First, check for exact alias match
+        alias_rows = conn.execute(
+            "SELECT note_id FROM kv WHERE key = 'core/alias' AND value = ?",
+            (text,)
+        ).fetchall()
+        
+        if len(alias_rows) == 1:
+            # Exact alias match
+            print(alias_rows[0][0])
+            return 0
+        elif len(alias_rows) > 1:
+            # Multiple aliases match - ambiguous
+            if not args.quiet:
+                print(f"Ambiguous: '{text}' matches multiple notes via aliases:", file=sys.stderr)
+                for row in alias_rows:
+                    note_id = row[0]
+                    title_row = conn.execute(
+                        "SELECT title FROM notes WHERE id = ?",
+                        (note_id,)
+                    ).fetchone()
+                    title = title_row[0] if title_row else ""
+                    print(f"  {note_id}\t{title} (alias)", file=sys.stderr)
+            return 2
+        
+        # Check for exact title match
+        title_rows = conn.execute(
+            "SELECT id FROM notes WHERE title = ?",
+            (text,)
+        ).fetchall()
+        
+        if len(title_rows) == 1:
+            # Exact title match
+            print(title_rows[0][0])
+            return 0
+        elif len(title_rows) > 1:
+            # Multiple titles match - ambiguous
+            if not args.quiet:
+                print(f"Ambiguous: '{text}' matches multiple notes via title:", file=sys.stderr)
+                for row in title_rows:
+                    print(f"  {row[0]}\t{text}", file=sys.stderr)
+            return 2
+        
+        # No exact match - show candidates
+        if not args.quiet:
+            print(f"No exact match for '{text}'. Candidates:", file=sys.stderr)
+            
+            # Find similar titles
+            similar_titles = conn.execute(
+                "SELECT id, title FROM notes WHERE title LIKE ? LIMIT 10",
+                (f"%{text}%",)
+            ).fetchall()
+            
+            for note_id, title in similar_titles:
+                print(f"  {note_id}\t{title}", file=sys.stderr)
+            
+            # Find similar aliases
+            similar_aliases = conn.execute(
+                "SELECT note_id, value FROM kv WHERE key = 'core/alias' AND value LIKE ? LIMIT 10",
+                (f"%{text}%",)
+            ).fetchall()
+            
+            for note_id, alias in similar_aliases:
+                print(f"  {note_id}\t{alias} (alias)", file=sys.stderr)
+        
+        return 2  # Ambiguous/not found
+    finally:
+        conn.close()
+
+
+def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
+    """Run diagnostics on the vault and index."""
+    import random
+
+    from .adapters.sqlite_index import SQLiteIndex
+    
+    issues = []
+    
+    # Check vault exists and is writable
+    vault_path = rt.vault.storage.root
+    if not vault_path.exists():
+        print(f"✗ Vault does not exist: {vault_path}")
+        issues.append("vault_missing")
+    elif not vault_path.is_dir():
+        print(f"✗ Vault is not a directory: {vault_path}")
+        issues.append("vault_not_dir")
+    else:
+        print(f"✓ Vault exists: {vault_path}")
+        
+        # Check if writable
+        try:
+            test_file = vault_path / ".hypo_test_write"
+            test_file.touch()
+            test_file.unlink()
+            print("✓ Vault is writable")
+        except Exception as e:
+            print(f"✗ Vault is not writable: {e}")
+            issues.append("vault_not_writable")
+    
+    # Check DB exists and schema is correct
+    if isinstance(rt.index, SQLiteIndex):
+        db_path = rt.index.db_path
+        if not db_path.exists():
+            print(f"✗ Database does not exist: {db_path}")
+            issues.append("db_missing")
+        else:
+            print(f"✓ Database exists: {db_path}")
+            
+            # Check schema version
+            conn = rt.index._conn()
+            try:
+                schema_version = conn.execute(
+                    "SELECT value FROM meta WHERE key = 'schema_version'"
+                ).fetchone()
+                
+                if schema_version:
+                    print(f"✓ Schema version: {schema_version[0]}")
+                else:
+                    print("✗ Schema version not found")
+                    issues.append("schema_version_missing")
+            except Exception as e:
+                print(f"✗ Failed to check schema: {e}")
+                issues.append("schema_check_failed")
+            finally:
+                conn.close()
+    else:
+        print("⚠ Not using SQLiteIndex")
+    
+    # Sample parse on N random notes
+    all_ids = list(rt.vault.list_ids())
+    if all_ids:
+        sample_size = min(10, len(all_ids))
+        sample_ids = random.sample(all_ids, sample_size)
+        
+        parse_errors = 0
+        for nid in sample_ids:
+            note = rt.vault.get(nid)
+            if note is None:
+                parse_errors += 1
+        
+        if parse_errors == 0:
+            print(f"✓ Sampled {sample_size} notes, all parsed successfully")
+        else:
+            print(f"✗ Failed to parse {parse_errors}/{sample_size} sampled notes")
+            issues.append("parse_errors")
+    else:
+        print("⚠ No notes found in vault")
+    
+    # Report counts
+    if isinstance(rt.index, SQLiteIndex):
+        conn = rt.index._conn()
+        try:
+            note_count = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+            link_count = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+            
+            # Count orphans (notes with no incoming or outgoing links)
+            orphan_count = conn.execute("""
+                SELECT COUNT(*) FROM notes
+                WHERE id NOT IN (SELECT DISTINCT src FROM links)
+                  AND id NOT IN (SELECT DISTINCT dst FROM links)
+            """).fetchone()[0]
+            
+            print("\nCounts:")
+            print(f"  Notes: {note_count}")
+            print(f"  Links: {link_count}")
+            print(f"  Orphans: {orphan_count}")
+        finally:
+            conn.close()
+    
+    # Recommendations
+    if issues:
+        print("\nRecommendations:")
+        if "db_missing" in issues or "schema_check_failed" in issues:
+            print("  Run: hypo reindex --full")
+        if "parse_errors" in issues:
+            print("  Check notes for syntax errors")
+        return 1
+    else:
+        print("\n✓ All checks passed")
+        return 0
+
+
 def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         prog="hypo", description="Hypomnemata CLI"
     )
     parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config file (default: search cwd/hypo.toml, vault/hypo.toml)",
+    )
+    parser.add_argument(
         "--vault",
         type=Path,
-        default=Path("./vault"),
-        help="Path to vault directory",
+        default=None,
+        help="Path to vault directory (overrides config)",
     )
     parser.add_argument(
         "--db",
         type=Path,
         default=None,
-        help="Path to SQLite index DB (default: vault/.hypo/index.sqlite)",
+        help="Path to SQLite index DB (overrides config)",
     )
     parser.add_argument(
         "-q", "--quiet", action="store_true", help="Minimize output"
@@ -448,6 +865,13 @@ def main() -> None:
     parser_ls.add_argument(
         "--orphans", action="store_true", help="Show notes with no links"
     )
+    parser_ls.add_argument(
+        "--with-titles", dest="with_titles", action="store_true",
+        help="Print id and title (tab-separated)"
+    )
+    parser_ls.add_argument(
+        "--format", choices=["json"], help="Output format (json)"
+    )
     
     # find command
     parser_find = subparsers.add_parser("find", help="Full-text search")
@@ -458,6 +882,19 @@ def main() -> None:
     parser_find.add_argument(
         "--snippets", action="store_true", help="Show snippets with highlights"
     )
+    parser_find.add_argument(
+        "--aliases", action="store_true", help="Include alias matches"
+    )
+    parser_find.add_argument(
+        "--fields", help="Comma-separated fields to display (e.g., id,title)"
+    )
+    
+    # resolve command
+    parser_resolve = subparsers.add_parser("resolve", help="Resolve text to note ID")
+    parser_resolve.add_argument("text", help="Text to resolve (alias or title)")
+    
+    # doctor command
+    subparsers.add_parser("doctor", help="Run diagnostics on vault and index")
     
     # backrefs command
     parser_backrefs = subparsers.add_parser(
@@ -482,6 +919,11 @@ def main() -> None:
     export_sub = parser_export.add_subparsers(dest="export_type", required=True)
     parser_quartz = export_sub.add_parser("quartz", help="Export to Quartz format")
     parser_quartz.add_argument("outdir", help="Output directory")
+    parser_quartz.add_argument(
+        "--assets-dir",
+        dest="assets_dir",
+        help="Copy assets from this directory to output/assets/",
+    )
     
     # rm command
     parser_rm = subparsers.add_parser("rm", help="Delete/trash a note")
@@ -498,10 +940,33 @@ def main() -> None:
         "--context", type=int, default=0, help="Include N lines before/after (default: 0)"
     )
     
+    # meta command
+    parser_meta = subparsers.add_parser("meta", help="Manage note metadata")
+    meta_sub = parser_meta.add_subparsers(dest="meta_cmd", required=True)
+    
+    parser_meta_get = meta_sub.add_parser("get", help="Get metadata values")
+    parser_meta_get.add_argument("id", help="Note ID")
+    parser_meta_get.add_argument("--keys", nargs="+", help="Specific keys to retrieve")
+    
+    parser_meta_set = meta_sub.add_parser("set", help="Set metadata values")
+    parser_meta_set.add_argument("id", help="Note ID")
+    parser_meta_set.add_argument("pairs", nargs="+", help="key=value pairs")
+    
+    parser_meta_unset = meta_sub.add_parser("unset", help="Remove metadata keys")
+    parser_meta_unset.add_argument("id", help="Note ID")
+    parser_meta_unset.add_argument("keys", nargs="+", help="Keys to remove")
+    
+    parser_meta_show = meta_sub.add_parser("show", help="Pretty-print frontmatter")
+    parser_meta_show.add_argument("id", help="Note ID")
+    
     args = parser.parse_args()
     
     # Build runtime
-    rt = build_runtime(args.vault, db_path=args.db)
+    rt = build_runtime(
+        vault_path=args.vault,
+        db_path=args.db,
+        config_path=args.config,
+    )
     
     # Dispatch to command handlers
     handlers = {
@@ -512,6 +977,8 @@ def main() -> None:
         "edit": cmd_edit,
         "ls": cmd_ls,
         "find": cmd_find,
+        "resolve": cmd_resolve,
+        "doctor": cmd_doctor,
         "backrefs": cmd_backrefs,
         "graph": cmd_graph,
         "lint": cmd_lint,
@@ -520,7 +987,18 @@ def main() -> None:
         "yank": cmd_yank,
     }
     
-    handler = handlers.get(args.cmd)
+    # Handle meta subcommand
+    if args.cmd == "meta":
+        meta_handlers = {
+            "get": cmd_meta_get,
+            "set": cmd_meta_set,
+            "unset": cmd_meta_unset,
+            "show": cmd_meta_show,
+        }
+        handler = meta_handlers.get(args.meta_cmd)
+    else:
+        handler = handlers.get(args.cmd)
+    
     if handler:
         try:
             exit_code = handler(args, rt)

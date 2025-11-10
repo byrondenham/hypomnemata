@@ -1,0 +1,25 @@
+# Example hypomnemata configuration file
+# Place this in your repository root, vault root, or specify with --config
+
+[vault]
+# Path to vault directory (default: "./vault")
+root = "vault"
+
+# Path to SQLite index database (default: vault/.hypo/index.sqlite)
+db = ".hypo/index.sqlite"
+
+[id]
+# Number of bytes for generated IDs (default: 6, which gives 12 hex characters)
+bytes = 6
+
+[export.quartz]
+# Output directory for Quartz exports (default: "site")
+out = "site"
+
+# KaTeX configuration for math rendering
+# auto: automatically detect math and add KaTeX flag (default: true)
+katex = { auto = true }
+
+[ui]
+# Enable colored output (default: true)
+colors = true

@@ -93,9 +93,16 @@ class SQLiteIndex(Index):
                     note_id TEXT NOT NULL,
                     key TEXT NOT NULL,
                     value TEXT,
-                    PRIMARY KEY (note_id, key),
                     FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
                 )
+            """)
+            
+            # Create index for kv lookups
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS kv_note_key_idx ON kv(note_id, key)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS kv_key_value_idx ON kv(key, value)
             """)
             
             # FTS5 virtual table
@@ -116,13 +123,58 @@ class SQLiteIndex(Index):
             
             # Set schema version
             conn.execute("""
-                INSERT INTO meta(key, value) VALUES('schema_version', '1')
+                INSERT INTO meta(key, value) VALUES('schema_version', '2')
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value
             """)
             
             conn.commit()
         finally:
             conn.close()
+    
+    def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        """Migrate schema from older versions."""
+        # Get current schema version
+        try:
+            row = conn.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()
+            current_version = int(row[0]) if row else 0
+        except Exception:
+            current_version = 0
+        
+        # Migrate from v1 to v2: update kv table to allow multiple values per key
+        if current_version < 2:
+            try:
+                # Drop old kv table if it exists with the old schema
+                conn.execute("DROP TABLE IF EXISTS kv")
+                
+                # Recreate with new schema
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS kv (
+                        note_id TEXT NOT NULL,
+                        key TEXT NOT NULL,
+                        value TEXT,
+                        FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+                    )
+                """)
+                
+                # Create indexes
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS kv_note_key_idx ON kv(note_id, key)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS kv_key_value_idx ON kv(key, value)
+                """)
+                
+                # Update version
+                conn.execute("""
+                    INSERT INTO meta(key, value) VALUES('schema_version', '2')
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                """)
+                
+                conn.commit()
+            except Exception as e:
+                print(f"Warning: Schema migration failed: {e}")
     
     def _ensure_schema(self) -> None:
         """Ensure DB exists and schema is initialized."""
@@ -135,6 +187,9 @@ class SQLiteIndex(Index):
                 conn = self._conn()
                 # Try a simple query to check if DB is valid
                 conn.execute("SELECT 1").fetchone()
+                
+                # Run migrations if needed
+                self._migrate_schema(conn)
                 conn.close()
             except sqlite3.DatabaseError:
                 # DB is corrupt, backup and recreate
@@ -195,7 +250,11 @@ class SQLiteIndex(Index):
     
     def _extract_title(self, note: Any) -> str:
         """Extract title from note using the stable heuristic."""
-        # Try meta first
+        # Try core/title meta first
+        if "core/title" in note.meta:
+            return str(note.meta["core/title"])
+        
+        # Try legacy title meta
         if "title" in note.meta:
             return str(note.meta["title"])
         
@@ -259,6 +318,7 @@ class SQLiteIndex(Index):
                 # Delete existing blocks and links
                 conn.execute("DELETE FROM blocks WHERE note_id = ?", (note_id,))
                 conn.execute("DELETE FROM links WHERE src = ?", (note_id,))
+                conn.execute("DELETE FROM kv WHERE note_id = ?", (note_id,))
                 
                 # Insert blocks
                 for block in note.body.blocks:
@@ -295,6 +355,17 @@ class SQLiteIndex(Index):
                         anchor_kind,
                         anchor_value
                     ))
+                
+                # Extract and insert aliases from core/aliases metadata
+                if "core/aliases" in note.meta:
+                    aliases = note.meta["core/aliases"]
+                    if isinstance(aliases, list):
+                        for alias in aliases:
+                            if isinstance(alias, str):
+                                conn.execute("""
+                                    INSERT INTO kv (note_id, key, value)
+                                    VALUES (?, ?, ?)
+                                """, (note_id, "core/alias", alias))
                 
                 # Update FTS
                 # Delete old entry
