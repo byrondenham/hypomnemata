@@ -12,6 +12,7 @@ license = {text = "MIT"}
 authors = [{name = "Byron Denham"}]
 dependencies = [
   "PyYAML>=6.0.1",
+  "tomli>=2.0.0; python_version<'3.11'",
 ]
 
 [project.optional-dependencies]
