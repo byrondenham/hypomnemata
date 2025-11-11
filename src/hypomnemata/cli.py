@@ -1109,6 +1109,116 @@ def cmd_audit_links(args: argparse.Namespace, rt: Any) -> int:
     return 1 if report.has_errors else 0
 
 
+def cmd_fmt(args: argparse.Namespace, rt: Any) -> int:
+    """Format notes with canonical frontmatter and link syntax."""
+    from .format.formatter import FormatOptions, format_file
+    
+    vault_path = rt.vault.storage.root
+    
+    # Build format options
+    options = FormatOptions(
+        frontmatter=args.frontmatter,
+        links=args.links,
+        ids_only=args.ids_only,
+        wrap=args.wrap,
+        eol=args.eol,
+        strip_trailing=args.strip_trailing,
+        ensure_final_eol=args.ensure_final_eol,
+    )
+    
+    # Parse key order if provided
+    if args.key_order:
+        options.key_order = [k.strip() for k in args.key_order.split(',')]
+    
+    # Get list of files to format
+    note_ids = list(rt.vault.list_ids())
+    
+    # Filter to changed only if requested
+    if args.changed_only:
+        from .format.formatter import compute_file_hash
+        # We'll check as we format
+        pass
+    
+    # Track results
+    changed_files = []
+    unchanged_files = []
+    
+    for note_id in note_ids:
+        file_path = vault_path / f"{note_id}.md"
+        if not file_path.exists():
+            continue
+        
+        try:
+            result = format_file(file_path, options, dry_run=args.dry_run)
+            
+            if result.changed:
+                changed_files.append((note_id, result.changes))
+                if not args.quiet:
+                    change_str = "+".join(result.changes)
+                    if args.dry_run:
+                        print(f"fmt   {note_id}.md   {change_str}")
+                    else:
+                        print(f"fmt   {note_id}.md   {change_str}")
+            else:
+                unchanged_files.append(note_id)
+        except Exception as e:
+            print(f"Error formatting {note_id}: {e}", file=sys.stderr)
+            if not args.dry_run:
+                return 1
+    
+    # Summary
+    if not args.quiet:
+        print(f"\nFormatted {len(changed_files)} files, {len(unchanged_files)} unchanged")
+    
+    # Exit 1 if files would change and not confirmed (CI mode)
+    if args.dry_run and changed_files and not args.confirm:
+        return 1
+    
+    return 0
+
+
+def cmd_verify_assets(args: argparse.Namespace, rt: Any) -> int:
+    """Verify asset integrity in vault."""
+    from .assets.verify import format_report, verify_assets
+    
+    vault_path = rt.vault.storage.root
+    assets_dir = Path(args.assets_dir) if args.assets_dir else vault_path / "assets"
+    
+    # Collect all notes - use full file content, not just body
+    notes = {}
+    for note_id in rt.vault.list_ids():
+        note_path = vault_path / f"{note_id}.md"
+        if note_path.exists():
+            notes[note_id] = note_path.read_text(encoding='utf-8')
+    
+    # Run verification
+    report = verify_assets(
+        vault_root=vault_path,
+        notes=notes,
+        assets_dir=assets_dir,
+        compute_hashes=args.hashes,
+        write_sidecars=args.write_sidecars,
+    )
+    
+    # Output report
+    output = format_report(report, json_output=args.json)
+    print(output)
+    
+    # Exit 1 if there are missing references
+    return 1 if report.missing_refs else 0
+
+
+def cmd_fix(args: argparse.Namespace, rt: Any) -> int:
+    """Apply targeted autofixes to notes."""
+    # For MVP, we'll implement basic fixes
+    # Future: --rename-assets and other fixes
+    
+    if not args.quiet:
+        print("Fix command: No fixes implemented yet")
+    
+    return 0
+
+
 def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -1320,6 +1430,75 @@ def main() -> None:
         help="Enable OpenAPI docs at /docs (default: false)"
     )
     
+    # fmt command
+    parser_fmt = subparsers.add_parser("fmt", help="Format notes")
+    parser_fmt.add_argument(
+        "--frontmatter", action="store_true", default=True,
+        help="Normalize frontmatter (default: true)"
+    )
+    parser_fmt.add_argument(
+        "--links", action="store_true", default=True,
+        help="Normalize link syntax (default: true)"
+    )
+    parser_fmt.add_argument(
+        "--ids-only", dest="ids_only", action="store_true",
+        help="Collapse [[id|id]] to [[id]]"
+    )
+    parser_fmt.add_argument(
+        "--wrap", type=int, default=0,
+        help="Wrap paragraphs at column N (0=disable, default: 0)"
+    )
+    parser_fmt.add_argument(
+        "--eol", choices=["lf", "crlf", "native"],
+        help="Normalize line endings"
+    )
+    parser_fmt.add_argument(
+        "--key-order",
+        help="Comma-separated key order (e.g., id,core/title,core/aliases)"
+    )
+    parser_fmt.add_argument(
+        "--strip-trailing", dest="strip_trailing", action="store_true", default=True,
+        help="Strip trailing whitespace (default: true)"
+    )
+    parser_fmt.add_argument(
+        "--ensure-final-eol", dest="ensure_final_eol", action="store_true", default=True,
+        help="Ensure final newline (default: true)"
+    )
+    parser_fmt.add_argument(
+        "--dry-run", dest="dry_run", action="store_true",
+        help="Show changes without writing"
+    )
+    parser_fmt.add_argument(
+        "--confirm", action="store_true",
+        help="Required to write changes (unless dry-run)"
+    )
+    parser_fmt.add_argument(
+        "--changed-only", dest="changed_only", action="store_true",
+        help="Only process files that differ"
+    )
+    
+    # verify-assets command
+    parser_verify = subparsers.add_parser("verify-assets", help="Verify asset integrity")
+    parser_verify.add_argument(
+        "--assets-dir",
+        help="Assets directory (default: vault/assets/)"
+    )
+    parser_verify.add_argument(
+        "--hashes", action="store_true",
+        help="Compute SHA256 hashes for assets"
+    )
+    parser_verify.add_argument(
+        "--write-sidecars", dest="write_sidecars", action="store_true",
+        help="Write .sha256 sidecar files"
+    )
+    
+    # fix command
+    parser_fix = subparsers.add_parser("fix", help="Apply targeted autofixes")
+    parser_fix.add_argument(
+        "--dry-run", dest="dry_run", action="store_true",
+        help="Show changes without writing"
+    )
+    
     # import command
     parser_import = subparsers.add_parser("import", help="Import Markdown notes")
     import_sub = parser_import.add_subparsers(dest="import_cmd", required=True)
@@ -1460,6 +1639,9 @@ def main() -> None:
         "watch": cmd_watch,
         "locate": cmd_locate,
         "serve": cmd_serve,
+        "fmt": cmd_fmt,
+        "verify-assets": cmd_verify_assets,
+        "fix": cmd_fix,
     }
     
     # Handle meta subcommand
