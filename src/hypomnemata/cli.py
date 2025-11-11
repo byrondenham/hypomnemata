@@ -860,6 +860,255 @@ def cmd_serve(args: argparse.Namespace, rt: Any) -> int:
     return 0
 
 
+def cmd_import_plan(args: argparse.Namespace, rt: Any) -> int:
+    """Scan source and build import plan."""
+    from .import_migrate.plan import build_import_plan, save_plan_csv, save_plan_json
+    
+    src_dir = Path(args.src).resolve()
+    if not src_dir.exists():
+        print(f"Source directory does not exist: {src_dir}", file=sys.stderr)
+        return 1
+    
+    # Build plan
+    alias_keys = args.alias_keys.split(',') if args.alias_keys else None
+    plan = build_import_plan(
+        src_dir=src_dir,
+        glob_pattern=args.glob,
+        id_strategy=args.id_by,
+        id_bytes=rt.config.id.bytes,
+        title_key=args.title_key,
+        alias_keys=alias_keys,
+        strict=args.strict,
+    )
+    
+    # Save outputs
+    if args.map:
+        map_path = Path(args.map)
+        save_plan_json(plan, map_path)
+        if not args.quiet:
+            print(f"Saved plan JSON to: {map_path}")
+    
+    if args.csv:
+        csv_path = Path(args.csv)
+        save_plan_csv(plan, csv_path)
+        if not args.quiet:
+            print(f"Saved plan CSV to: {csv_path}")
+    
+    # Print summary
+    if not args.quiet:
+        ok_count = sum(1 for item in plan.items if item.status == "ok")
+        conflict_count = sum(1 for item in plan.items if item.status == "conflict")
+        error_count = sum(1 for item in plan.items if item.status == "error")
+        
+        print("\nImport Plan Summary:")
+        print(f"  Total items: {len(plan.items)}")
+        print(f"  OK: {ok_count}")
+        print(f"  Conflicts: {conflict_count}")
+        print(f"  Errors: {error_count}")
+        
+        if plan.conflicts:
+            print("\nConflicts detected:")
+            for key, paths in plan.conflicts.items():
+                print(f"  {key}: {len(paths)} files")
+    
+    return 1 if plan.conflicts or error_count > 0 else 0
+
+
+def cmd_import_apply(args: argparse.Namespace, rt: Any) -> int:
+    """Execute import based on plan."""
+    from .import_migrate.apply import apply_import, save_manifest
+    from .import_migrate.plan import build_import_plan, load_plan_json
+    
+    dst_vault = Path(args.dst_vault).resolve()
+    
+    # Load or build plan
+    if args.plan:
+        plan = load_plan_json(Path(args.plan))
+    else:
+        # Rebuild plan
+        src_dir = Path(args.src).resolve()
+        if not src_dir.exists():
+            print(f"Source directory does not exist: {src_dir}", file=sys.stderr)
+            return 1
+        
+        plan = build_import_plan(
+            src_dir=src_dir,
+            glob_pattern="**/*.md",
+            id_strategy="random",
+            id_bytes=rt.config.id.bytes,
+        )
+    
+    # Check for confirmation if not dry-run
+    if not args.dry_run and not args.confirm:
+        print("Error: --confirm required to execute import", file=sys.stderr)
+        return 1
+    
+    # Execute import
+    try:
+        manifest = apply_import(
+            plan=plan,
+            dst_vault=dst_vault,
+            operation=args.move if args.move else "copy",
+            dry_run=args.dry_run,
+            on_conflict=args.on_conflict,
+        )
+        
+        # Save manifest
+        if not args.dry_run:
+            manifest_dir = dst_vault / ".hypo"
+            manifest_dir.mkdir(exist_ok=True)
+            manifest_path = manifest_dir / "import-manifest.json"
+            save_manifest(manifest, manifest_path)
+            
+            if not args.quiet:
+                print(f"\nImport completed. Manifest saved to: {manifest_path}")
+                print(f"  Imported: {len(manifest.entries)} files")
+        
+        return 0
+    except Exception as e:
+        print(f"Error during import: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_import_rollback(args: argparse.Namespace, rt: Any) -> int:
+    """Rollback import operations."""
+    from .import_migrate.rollback import rollback_from_file
+    
+    manifest_path = Path(args.manifest)
+    if not manifest_path.exists():
+        print(f"Manifest not found: {manifest_path}", file=sys.stderr)
+        return 1
+    
+    # Check for confirmation if not dry-run
+    if not args.dry_run and not args.confirm:
+        print("Error: --confirm required to execute rollback", file=sys.stderr)
+        return 1
+    
+    try:
+        rollback_from_file(manifest_path, dry_run=args.dry_run)
+        if not args.quiet:
+            print("Rollback completed.")
+        return 0
+    except Exception as e:
+        print(f"Error during rollback: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_migrate_links(args: argparse.Namespace, rt: Any) -> int:
+    """Migrate wiki/MD links to ID-based format."""
+    from .adapters.sqlite_index import SQLiteIndex
+    from .import_migrate.migrate import apply_migration, migrate_file_links
+    
+    if not isinstance(rt.index, SQLiteIndex):
+        print("Error: Migrate requires SQLiteIndex", file=sys.stderr)
+        return 1
+    
+    # Check for confirmation if not dry-run
+    if not args.dry_run and not args.confirm:
+        print("Error: --confirm required to execute migration", file=sys.stderr)
+        return 1
+    
+    vault_path = rt.vault.storage.root
+    
+    # Ensure index is up to date
+    if not args.quiet:
+        print("Updating index...")
+    rt.index.rebuild()
+    
+    # Migrate all files in vault
+    total_files = 0
+    total_changes = 0
+    total_errors = 0
+    
+    for note_id in rt.vault.list_ids():
+        file_path = vault_path / f"{note_id}.md"
+        if not file_path.exists():
+            continue
+        
+        total_files += 1
+        
+        result = migrate_file_links(
+            file_path=file_path,
+            vault_path=vault_path,
+            index=rt.index,
+            from_format=args.from_format,
+            resolver_mode=args.resolver,
+            prefer=args.prefer,
+        )
+        
+        if result.errors:
+            total_errors += len(result.errors)
+            if not args.quiet:
+                print(f"\n{file_path}:")
+                for error in result.errors:
+                    print(f"  ! {error}")
+        
+        if result.changes > 0:
+            total_changes += result.changes
+            apply_migration(result, dry_run=args.dry_run)
+    
+    # Print summary
+    if not args.quiet:
+        print("\nMigration Summary:")
+        print(f"  Files processed: {total_files}")
+        print(f"  Links changed: {total_changes}")
+        print(f"  Errors: {total_errors}")
+    
+    return 1 if total_errors > 0 else 0
+
+
+def cmd_audit_links(args: argparse.Namespace, rt: Any) -> int:
+    """Audit vault for link integrity."""
+    from .adapters.sqlite_index import SQLiteIndex
+    from .import_migrate.audit import audit_vault
+    
+    if not isinstance(rt.index, SQLiteIndex):
+        print("Error: Audit requires SQLiteIndex", file=sys.stderr)
+        return 1
+    
+    # Ensure index is up to date
+    rt.index.rebuild()
+    
+    # Run audit
+    report = audit_vault(rt.vault, rt.index, strict=args.strict)
+    
+    # Print results
+    if args.json:
+        output = {
+            "total_notes": report.total_notes,
+            "total_links": report.total_links,
+            "dead_links": report.dead_links,
+            "unknown_anchors": report.unknown_anchors,
+            "duplicate_labels": report.duplicate_labels,
+            "unmigrated_links": report.unmigrated_links,
+            "findings": [
+                {
+                    "note_id": f.note_id,
+                    "severity": f.severity,
+                    "message": f.message,
+                }
+                for f in report.findings
+            ],
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        print("Audit Results:")
+        print(f"  Total notes: {report.total_notes}")
+        print(f"  Total links: {report.total_links}")
+        print(f"  Dead links: {report.dead_links}")
+        print(f"  Unknown anchors: {report.unknown_anchors}")
+        print(f"  Duplicate labels: {report.duplicate_labels}")
+        if args.strict:
+            print(f"  Un-migrated links: {report.unmigrated_links}")
+        
+        if report.findings:
+            print("\nFindings:")
+            for finding in report.findings:
+                print(f"  [{finding.severity}] {finding.note_id}: {finding.message}")
+    
+    return 1 if report.has_errors else 0
+
+
 def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -1071,6 +1320,117 @@ def main() -> None:
         help="Enable OpenAPI docs at /docs (default: false)"
     )
     
+    # import command
+    parser_import = subparsers.add_parser("import", help="Import Markdown notes")
+    import_sub = parser_import.add_subparsers(dest="import_cmd", required=True)
+    
+    # import plan
+    parser_import_plan = import_sub.add_parser("plan", help="Scan source and build import plan")
+    parser_import_plan.add_argument("src", help="Source directory to scan")
+    parser_import_plan.add_argument(
+        "--glob", default="**/*.md",
+        help="File glob pattern (default: **/*.md)"
+    )
+    parser_import_plan.add_argument(
+        "--map", help="Output path for plan JSON file"
+    )
+    parser_import_plan.add_argument(
+        "--csv", help="Output path for plan CSV file"
+    )
+    parser_import_plan.add_argument(
+        "--id-by", choices=["random", "hash", "slug"], default="random",
+        help="ID generation strategy (default: random)"
+    )
+    parser_import_plan.add_argument(
+        "--title-key", default="core/title",
+        help="Frontmatter key for title (default: core/title)"
+    )
+    parser_import_plan.add_argument(
+        "--alias-keys", default=None,
+        help="Comma-separated frontmatter keys for aliases (default: core/aliases,aliases)"
+    )
+    parser_import_plan.add_argument(
+        "--strict", action="store_true",
+        help="Fail on any conflicts"
+    )
+    
+    # import apply
+    parser_import_apply = import_sub.add_parser("apply", help="Execute import")
+    parser_import_apply.add_argument("src", help="Source directory")
+    parser_import_apply.add_argument("dst_vault", help="Destination vault directory")
+    parser_import_apply.add_argument(
+        "--plan", help="Path to plan JSON file (optional)"
+    )
+    parser_import_apply.add_argument(
+        "--move", action="store_true",
+        help="Move files instead of copy"
+    )
+    parser_import_apply.add_argument(
+        "--dry-run", action="store_true",
+        help="Print changes without writing"
+    )
+    parser_import_apply.add_argument(
+        "--confirm", action="store_true",
+        help="Required to proceed (unless dry-run)"
+    )
+    parser_import_apply.add_argument(
+        "--on-conflict", choices=["skip", "new-id", "fail"], default="fail",
+        help="How to handle existing files (default: fail)"
+    )
+    
+    # import rollback
+    parser_import_rollback = import_sub.add_parser("rollback", help="Rollback import")
+    parser_import_rollback.add_argument(
+        "--manifest", default=".hypo/import-manifest.json",
+        help="Path to manifest file (default: .hypo/import-manifest.json)"
+    )
+    parser_import_rollback.add_argument(
+        "--dry-run", action="store_true",
+        help="Print changes without writing"
+    )
+    parser_import_rollback.add_argument(
+        "--confirm", action="store_true",
+        help="Required to proceed (unless dry-run)"
+    )
+    
+    # migrate command
+    parser_migrate = subparsers.add_parser("migrate", help="Migrate links")
+    migrate_sub = parser_migrate.add_subparsers(dest="migrate_cmd", required=True)
+    
+    # migrate links
+    parser_migrate_links = migrate_sub.add_parser("links", help="Migrate wiki/MD links to IDs")
+    parser_migrate_links.add_argument(
+        "--dry-run", action="store_true",
+        help="Print unified diff without writing"
+    )
+    parser_migrate_links.add_argument(
+        "--confirm", action="store_true",
+        help="Required to proceed (unless dry-run)"
+    )
+    parser_migrate_links.add_argument(
+        "--from", dest="from_format", choices=["wiki", "md", "mixed"], default="mixed",
+        help="Source link format (default: mixed)"
+    )
+    parser_migrate_links.add_argument(
+        "--resolver", choices=["title", "alias", "both"], default="both",
+        help="Resolution strategy (default: both)"
+    )
+    parser_migrate_links.add_argument(
+        "--prefer", choices=["alias", "title"], default="alias",
+        help="Preference when both match (default: alias)"
+    )
+    
+    # audit command
+    parser_audit = subparsers.add_parser("audit", help="Audit vault integrity")
+    audit_sub = parser_audit.add_subparsers(dest="audit_cmd", required=True)
+    
+    # audit links
+    parser_audit_links = audit_sub.add_parser("links", help="Audit link integrity")
+    parser_audit_links.add_argument(
+        "--strict", action="store_true",
+        help="Treat un-migrated links as errors"
+    )
+    
     args = parser.parse_args()
     
     # Build runtime
@@ -1111,6 +1471,26 @@ def main() -> None:
             "show": cmd_meta_show,
         }
         handler = meta_handlers.get(args.meta_cmd)
+    # Handle import subcommand
+    elif args.cmd == "import":
+        import_handlers = {
+            "plan": cmd_import_plan,
+            "apply": cmd_import_apply,
+            "rollback": cmd_import_rollback,
+        }
+        handler = import_handlers.get(args.import_cmd)
+    # Handle migrate subcommand
+    elif args.cmd == "migrate":
+        migrate_handlers = {
+            "links": cmd_migrate_links,
+        }
+        handler = migrate_handlers.get(args.migrate_cmd)
+    # Handle audit subcommand
+    elif args.cmd == "audit":
+        audit_handlers = {
+            "links": cmd_audit_links,
+        }
+        handler = audit_handlers.get(args.audit_cmd)
     else:
         handler = handlers.get(args.cmd)
     
