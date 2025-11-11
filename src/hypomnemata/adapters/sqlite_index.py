@@ -459,6 +459,64 @@ class SQLiteIndex(Index):
         finally:
             conn.close()
     
+    def update_notes(self, changed: set[str], deleted: set[str]) -> dict[str, int]:
+        """
+        Incrementally update specific notes in the index.
+        
+        Args:
+            changed: Set of note IDs that were created or modified
+            deleted: Set of note IDs that were deleted
+        
+        Returns:
+            Dictionary with counts: updated, inserted, removed
+        """
+        self._ensure_schema()
+        
+        conn = self._conn()
+        conn.execute("PRAGMA busy_timeout=3000")
+        
+        try:
+            counts = {
+                "updated": 0,
+                "inserted": 0,
+                "removed": 0,
+            }
+            
+            # Handle deletions
+            for note_id in deleted:
+                # Delete note and cascading data
+                conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+                conn.execute("DELETE FROM fts WHERE id = ?", (note_id,))
+                counts["removed"] += 1
+            conn.commit()
+            
+            # Get existing note IDs
+            db_ids = set(
+                row[0] for row in conn.execute(
+                    "SELECT id FROM notes WHERE id IN ({})".format(
+                        ",".join("?" * len(changed))
+                    ),
+                    tuple(changed)
+                ).fetchall()
+            ) if changed else set()
+            
+            # Handle changed notes
+            for note_id in changed:
+                is_new = note_id not in db_ids
+                
+                # Index the note (use_hash=False for speed)
+                success = self._index_note(note_id, False, conn)
+                if success:
+                    if is_new:
+                        counts["inserted"] += 1
+                    else:
+                        counts["updated"] += 1
+            
+            return counts
+            
+        finally:
+            conn.close()
+    
     def links_out(self, id: NoteId) -> list[Link]:
         """Get all outgoing links from a note."""
         conn = self._conn()

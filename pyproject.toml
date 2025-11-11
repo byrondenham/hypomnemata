@@ -23,6 +23,13 @@ dev = [
   "mypy>=1.11",
   "types-PyYAML",
 ]
+api = [
+  "fastapi>=0.111",
+  "uvicorn>=0.30",
+]
+watch = [
+  "watchdog>=4",
+]
 
 [project.scripts]
 hypo = "hypomnemata.cli:main"
