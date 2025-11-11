@@ -700,8 +700,47 @@ def cmd_resolve(args: argparse.Namespace, rt: Any) -> int:
 def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
     """Run diagnostics on the vault and index."""
     import random
+    import sqlite3
 
     from .adapters.sqlite_index import SQLiteIndex
+    
+    # If --versions flag is set, show version information
+    if getattr(args, 'versions', False):
+        print("Version Information:")
+        print(f"  Hypomnemata: {__version__}")
+        py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        print(f"  Python: {py_ver}")
+        print(f"  Platform: {platform.system()} {platform.release()}")
+        
+        # Show SQLite version
+        print(f"  SQLite: {sqlite3.sqlite_version}")
+        
+        # Show optional dependency versions if available
+        try:
+            import yaml
+            print(f"  PyYAML: {yaml.__version__}")
+        except (ImportError, AttributeError):
+            print("  PyYAML: not installed")
+        
+        try:
+            import fastapi
+            print(f"  FastAPI: {fastapi.__version__}")
+        except (ImportError, AttributeError):
+            print("  FastAPI: not installed")
+        
+        try:
+            import uvicorn
+            print(f"  Uvicorn: {uvicorn.__version__}")
+        except (ImportError, AttributeError):
+            print("  Uvicorn: not installed")
+        
+        try:
+            import watchdog
+            print(f"  Watchdog: {watchdog.__version__}")  # type: ignore[attr-defined]
+        except (ImportError, AttributeError):
+            print("  Watchdog: not installed")
+        
+        return 0
     
     issues = []
     
@@ -1345,7 +1384,11 @@ def main() -> None:
     parser_resolve.add_argument("text", help="Text to resolve (alias or title)")
     
     # doctor command
-    subparsers.add_parser("doctor", help="Run diagnostics on vault and index")
+    parser_doctor = subparsers.add_parser("doctor", help="Run diagnostics on vault and index")
+    parser_doctor.add_argument(
+        "--versions", action="store_true",
+        help="Show version information for dependencies"
+    )
     
     # backrefs command
     parser_backrefs = subparsers.add_parser(
