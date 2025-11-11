@@ -539,3 +539,78 @@ Missing transclusions now have clearer error messages:
    NOTE=$(hypo resolve "Weekly Review")
    hypo edit "$NOTE"
    ```
+
+## Formatting and Maintenance
+
+### Format Notes
+
+Canonicalize note formatting for consistency:
+
+```bash
+# Check what would change (dry-run)
+$ hypo fmt --dry-run
+fmt   abc123.md   frontmatter+links
+fmt   def456.md   whitespace
+
+Formatted 2 files, 8 unchanged
+
+# Apply formatting
+$ hypo fmt --confirm
+fmt   abc123.md   frontmatter+links
+fmt   def456.md   whitespace
+
+Formatted 2 files, 8 unchanged
+
+# Format with custom options
+$ hypo fmt --confirm --ids-only --wrap 80 --eol lf --strip-trailing
+```
+
+The formatter:
+- Ensures `id` in frontmatter matches filename
+- Applies stable key ordering (id, core/title, core/aliases, then alphabetical)
+- Normalizes link syntax: `[[ id | Title ]]` → `[[id|Title]]`
+- Collapses redundant display text with `--ids-only`: `[[id|id]]` → `[[id]]`
+- Strips trailing whitespace and ensures final newline
+- Optional paragraph wrapping at specified column width
+- Preserves code blocks and inline code
+
+### Verify Assets
+
+Check asset integrity and find issues:
+
+```bash
+# Basic verification
+$ hypo verify-assets
+Asset Verification Report
+========================
+Total references: 15
+Missing references: 2
+Dangling files: 1
+
+Missing Files:
+  note1: assets/diagram.png (image)
+  note2: files/report.pdf (file)
+
+Dangling Files:
+  assets/old-image.jpg
+
+# Compute hashes
+$ hypo verify-assets --hashes
+Asset Verification Report
+========================
+Total references: 15
+Missing references: 0
+Dangling files: 0
+Computed 15 file hashes
+
+# Write sidecar files for verification
+$ hypo verify-assets --hashes --write-sidecars
+# Creates assets/diagram.png.sha256, etc.
+```
+
+The verifier:
+- Scans all notes for asset references (Markdown images, file links, HTML img tags)
+- Checks if referenced files exist
+- Finds dangling files (in assets directory but not referenced)
+- Optionally computes SHA256 hashes
+- Can write `.sha256` sidecar files for integrity checking
