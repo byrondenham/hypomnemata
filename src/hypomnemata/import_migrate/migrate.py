@@ -257,10 +257,8 @@ def migrate_file_links(
         )
         all_errors.extend(md_errors)
     
-    # Count changes (simple heuristic: number of [[...]] patterns changed)
-    original_link_count = len(re.findall(r'\[\[([^\]]+)\]\]', original))
-    migrated_link_count = len(re.findall(r'\[\[([^\]]+)\]\]', content))
-    changes = abs(original_link_count - migrated_link_count)
+    # Count changes (simple heuristic: compare content)
+    changes = 1 if content != original else 0
     
     return LinkMigrationResult(
         path=str(file_path),
