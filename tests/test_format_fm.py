@@ -1,6 +1,5 @@
 """Tests for frontmatter normalization."""
 
-import pytest
 
 from hypomnemata.format.fm import normalize_frontmatter
 

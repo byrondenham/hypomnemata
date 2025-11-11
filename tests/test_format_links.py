@@ -1,6 +1,5 @@
 """Tests for link normalization."""
 
-import pytest
 
 from hypomnemata.format.links import normalize_links
 
