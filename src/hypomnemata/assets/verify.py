@@ -142,8 +142,8 @@ def format_report(report: AssetReport, json_output: bool = False) -> str:
         }, indent=2)
     else:
         lines = []
-        lines.append(f"Asset Verification Report")
-        lines.append(f"========================")
+        lines.append("Asset Verification Report")
+        lines.append("========================")
         lines.append(f"Total references: {report.total_refs}")
         lines.append(f"Missing references: {len(report.missing_refs)}")
         lines.append(f"Dangling files: {len(report.dangling_files)}")

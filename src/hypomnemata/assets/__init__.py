@@ -1,7 +1,7 @@
 """Asset verification utilities for Hypomnemata."""
 
 from .scanner import scan_asset_refs
-from .verify import verify_assets, AssetReport
+from .verify import AssetReport, verify_assets
 
 __all__ = [
     "scan_asset_refs",

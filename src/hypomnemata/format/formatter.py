@@ -3,7 +3,6 @@
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from .fm import normalize_frontmatter
 from .links import normalize_links

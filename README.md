@@ -135,10 +135,56 @@ hypo resolve "Weekly Review"
 - `hypo reindex` - Rebuild search index
 - `hypo lint` - Check for broken links
 - `hypo rm <id>` - Delete a note
+- `hypo fmt` - Format notes with canonical syntax
+- `hypo verify-assets` - Verify asset integrity
+- `hypo fix` - Apply targeted autofixes (experimental)
 
 ### Export Commands
 
 - `hypo export quartz <outdir>` - Export to Quartz format
+
+## Formatting and Cleanup
+
+### Format Notes
+
+Canonicalize Markdown and frontmatter:
+
+```bash
+# Dry-run to see what would change
+hypo fmt --dry-run
+
+# Apply formatting
+hypo fmt --confirm
+
+# Format with specific options
+hypo fmt --confirm --ids-only --wrap 80 --eol lf
+```
+
+Features:
+- Normalizes frontmatter (ensures `id` matches filename, stable key ordering)
+- Cleans up link syntax (removes spaces, normalizes transclusions)
+- Text hygiene (trailing whitespace, line endings, paragraph wrapping)
+- Atomic writes with dry-run support
+
+### Verify Assets
+
+Check asset integrity and find missing/dangling files:
+
+```bash
+# Basic verification
+hypo verify-assets
+
+# Compute SHA256 hashes
+hypo verify-assets --hashes
+
+# Write sidecar .sha256 files
+hypo verify-assets --hashes --write-sidecars
+```
+
+Detects:
+- Missing referenced assets
+- Dangling assets (not referenced by any note)
+- Supports Markdown images, file links, and HTML img tags
 
 ## CLI Enhancements
 

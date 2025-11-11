@@ -1,6 +1,5 @@
 """Link normalization for Hypomnemata notes."""
 
-import re
 
 
 def normalize_links(
@@ -65,7 +64,6 @@ def normalize_links(
             while i < len(text):
                 if text[i] == '`':
                     close_count = 0
-                    close_pos = i
                     while i < len(text) and text[i] == '`':
                         close_count += 1
                         i += 1
