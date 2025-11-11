@@ -13,6 +13,7 @@ from .core.model import Anchor, Note
 from .core.slicer import slice_by_anchor
 from .export.quartz import QuartzAdapter
 from .lint import DeadLinksRule, Finding
+from .locate import cmd_locate
 from .runtime import build_runtime
 
 
@@ -790,6 +791,75 @@ def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
         return 0
 
 
+def cmd_watch(args: argparse.Namespace, rt: Any) -> int:
+    """Watch vault for changes and incrementally reindex."""
+    from .watch import watch_vault
+    
+    debounce_ms = getattr(args, 'debounce_ms', 150)
+    
+    return watch_vault(
+        vault_path=rt.vault.storage.root,
+        index=rt.index,
+        debounce_ms=debounce_ms,
+        quiet=args.quiet,
+        json_output=args.json,
+    )
+
+
+def cmd_serve(args: argparse.Namespace, rt: Any) -> int:
+    """Start local JSON API server."""
+    try:
+        import uvicorn
+
+        from .api.app import create_app, generate_token
+    except ImportError as e:
+        print(
+            "Error: API dependencies not installed. "
+            "Install with: pip install hypomnemata[api]",
+            file=sys.stderr
+        )
+        print(f"Details: {e}", file=sys.stderr)
+        return 1
+    
+    # Determine token
+    token_arg = getattr(args, 'token', 'auto')
+    token = None
+    
+    if token_arg == 'auto':
+        token = generate_token()
+        print(f"Generated bearer token: {token}")
+        print(f"Use in requests: Authorization: Bearer {token}")
+    elif token_arg == 'none':
+        print("Warning: Running without authentication. Only use in trusted environments.")
+        token = None
+    else:
+        token = token_arg
+    
+    # Create app
+    enable_cors = getattr(args, 'cors', False)
+    openapi = getattr(args, 'openapi', False)
+    app = create_app(rt, token=token, enable_cors=enable_cors)
+    
+    # Enable/disable OpenAPI docs
+    if openapi and token:
+        # Re-enable docs
+        app.docs_url = "/docs"
+        app.redoc_url = "/redoc"
+    
+    # Get host and port
+    host = getattr(args, 'host', '127.0.0.1')
+    port = getattr(args, 'port', 8765)
+    
+    print(f"Starting server on http://{host}:{port}")
+    if token:
+        print(f"Authorization required: Bearer {token}")
+    
+    # Run server
+    uvicorn.run(app, host=host, port=port, log_level="info")
+    
+    return 0
+
+
 def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -959,6 +1029,48 @@ def main() -> None:
     parser_meta_show = meta_sub.add_parser("show", help="Pretty-print frontmatter")
     parser_meta_show.add_argument("id", help="Note ID")
     
+    # watch command
+    parser_watch = subparsers.add_parser("watch", help="Watch vault for changes")
+    parser_watch.add_argument(
+        "--debounce-ms", type=int, default=150,
+        help="Debounce window in milliseconds (default: 150)"
+    )
+    
+    # locate command
+    parser_locate = subparsers.add_parser("locate", help="Get precise location of note or anchor")
+    parser_locate.add_argument("ref", help="Note reference: <id> or <id>#<anchor>")
+    parser_locate.add_argument(
+        "--format", choices=["json", "tsv"], default="json",
+        help="Output format (default: json)"
+    )
+    parser_locate.add_argument(
+        "--context", type=int, default=0,
+        help="Context lines (reserved for future use)"
+    )
+    
+    # serve command
+    parser_serve = subparsers.add_parser("serve", help="Start local JSON API server")
+    parser_serve.add_argument(
+        "--host", default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)"
+    )
+    parser_serve.add_argument(
+        "--port", type=int, default=8765,
+        help="Port to bind to (default: 8765)"
+    )
+    parser_serve.add_argument(
+        "--token", default="auto",
+        help="Bearer token (auto|<string>|none, default: auto)"
+    )
+    parser_serve.add_argument(
+        "--cors", action="store_true",
+        help="Enable CORS (default: false)"
+    )
+    parser_serve.add_argument(
+        "--openapi", action="store_true",
+        help="Enable OpenAPI docs at /docs (default: false)"
+    )
+    
     args = parser.parse_args()
     
     # Build runtime
@@ -985,6 +1097,9 @@ def main() -> None:
         "export": cmd_export_quartz,
         "rm": cmd_rm,
         "yank": cmd_yank,
+        "watch": cmd_watch,
+        "locate": cmd_locate,
+        "serve": cmd_serve,
     }
     
     # Handle meta subcommand

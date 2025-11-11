@@ -7,7 +7,7 @@ from typing import Any
 try:
     import tomllib
 except ImportError:
-    import tomli as tomllib  # type: ignore
+    import tomli as tomllib  # noqa: F401
 
 
 @dataclass

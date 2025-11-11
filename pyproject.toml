@@ -22,6 +22,14 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "types-PyYAML",
+  "httpx>=0.27",  # For testing FastAPI endpoints
+]
+api = [
+  "fastapi>=0.111",
+  "uvicorn>=0.30",
+]
+watch = [
+  "watchdog>=4",
 ]
 
 [project.scripts]
