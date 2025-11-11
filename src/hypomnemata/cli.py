@@ -23,13 +23,13 @@ def cmd_version(args: argparse.Namespace, rt: Any = None) -> int:
     """Print version information."""
     # Get Python version
     py_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    
+
     # Get platform
     plat = platform.system().lower()
-    
+
     # Get commit SHA from environment (injected by CI) or fallback to "unknown"
     commit = os.environ.get("GIT_SHA", "unknown")
-    
+
     # Print version info
     print(f"hypomnemata {__version__} (python {py_version} / platform {plat} / commit {commit})")
     return 0
@@ -38,28 +38,28 @@ def cmd_version(args: argparse.Namespace, rt: Any = None) -> int:
 def cmd_reindex(args: argparse.Namespace, rt: Any) -> int:
     """Build or repair SQLite index."""
     from .adapters.sqlite_index import SQLiteIndex
-    
+
     if not isinstance(rt.index, SQLiteIndex):
         print("Error: Index is not a SQLiteIndex", file=sys.stderr)
         return 1
-    
-    full = getattr(args, 'full', False)
-    use_hash = getattr(args, 'hash', False)
-    
+
+    full = getattr(args, "full", False)
+    use_hash = getattr(args, "hash", False)
+
     if not args.quiet:
         print(f"Reindexing vault... (full={full}, hash={use_hash})")
-    
+
     counts = rt.index.rebuild(full=full, use_hash=use_hash)
-    
+
     if not args.quiet:
         print(f"Scanned: {counts['scanned']}")
         print(f"Dirty: {counts['dirty']}")
         print(f"Inserted: {counts['inserted']}")
         print(f"Updated: {counts['updated']}")
         print(f"Removed: {counts['removed']}")
-        if counts['failed'] > 0:
+        if counts["failed"] > 0:
             print(f"Failed: {counts['failed']}")
-    
+
     return 0
 
 
@@ -72,33 +72,33 @@ def cmd_id(args: argparse.Namespace, rt: Any) -> int:
 def cmd_new(args: argparse.Namespace, rt: Any) -> int:
     """Create a new note."""
     nid = rt.idgen.new_id()
-    
+
     # Build metadata from args
     mb = MetaBag({"id": nid})
     if args.title:
         mb["title"] = args.title
-    
+
     for kv in args.meta:
         k, _, val = kv.partition("=")
         mb[k.strip()] = val.strip()
-    
+
     # Create initial body
     title_line = f"# {args.title}\n\n" if args.title else "# \n\n"
     body = rt.vault.parser.parse(title_line, nid)
-    
+
     # Save note
     note = Note(id=nid, meta=mb, body=body)
     rt.vault.put(note)
-    
+
     if not args.quiet:
         print(nid)
-    
+
     # Open in editor if requested
     if args.edit:
         editor = os.environ.get("EDITOR", "vi")
         filepath = rt.vault.storage._path(nid)
         subprocess.run([editor, str(filepath)])
-    
+
     return 0
 
 
@@ -117,7 +117,7 @@ def cmd_edit(args: argparse.Namespace, rt: Any) -> int:
     if rt.vault.get(args.id) is None:
         print(f"Note {args.id} not found", file=sys.stderr)
         return 1
-    
+
     editor = os.environ.get("EDITOR", "vi")
     filepath = rt.vault.storage._path(args.id)
     subprocess.run([editor, str(filepath)])
@@ -127,7 +127,7 @@ def cmd_edit(args: argparse.Namespace, rt: Any) -> int:
 def cmd_ls(args: argparse.Namespace, rt: Any) -> int:
     """List notes with optional filters."""
     from .adapters.sqlite_index import SQLiteIndex
-    
+
     # Filter for orphans using DB if available
     if args.orphans:
         if isinstance(rt.index, SQLiteIndex):
@@ -143,7 +143,7 @@ def cmd_ls(args: argparse.Namespace, rt: Any) -> int:
             ids = filtered
     else:
         ids = list(rt.vault.list_ids())
-        
+
         # Filter by grep pattern
         if args.grep:
             pattern = args.grep.lower()
@@ -153,22 +153,19 @@ def cmd_ls(args: argparse.Namespace, rt: Any) -> int:
                 if note and pattern in note.body.raw.lower():
                     filtered.append(nid)
             ids = filtered
-    
+
     # Sort IDs
     ids = sorted(ids)
-    
+
     # Handle different output formats
-    if getattr(args, 'format', None) == 'json':
+    if getattr(args, "format", None) == "json":
         # JSON output with titles
         if isinstance(rt.index, SQLiteIndex):
             conn = rt.index._conn()
             try:
                 result = []
                 for nid in ids:
-                    row = conn.execute(
-                        "SELECT title FROM notes WHERE id = ?",
-                        (nid,)
-                    ).fetchone()
+                    row = conn.execute("SELECT title FROM notes WHERE id = ?", (nid,)).fetchone()
                     title = row[0] if row else ""
                     result.append({"id": nid, "title": title})
                 print(json.dumps(result, indent=2))
@@ -178,16 +175,13 @@ def cmd_ls(args: argparse.Namespace, rt: Any) -> int:
             # Fallback without titles
             result = [{"id": nid, "title": ""} for nid in ids]
             print(json.dumps(result, indent=2))
-    elif getattr(args, 'with_titles', False):
+    elif getattr(args, "with_titles", False):
         # Tab-separated output
         if isinstance(rt.index, SQLiteIndex):
             conn = rt.index._conn()
             try:
                 for nid in ids:
-                    row = conn.execute(
-                        "SELECT title FROM notes WHERE id = ?",
-                        (nid,)
-                    ).fetchone()
+                    row = conn.execute("SELECT title FROM notes WHERE id = ?", (nid,)).fetchone()
                     title = row[0] if row else ""
                     print(f"{nid}\t{title}")
             finally:
@@ -200,51 +194,50 @@ def cmd_ls(args: argparse.Namespace, rt: Any) -> int:
         # Default: just IDs
         for nid in ids:
             print(nid)
-    
+
     return 0
 
 
 def cmd_find(args: argparse.Namespace, rt: Any) -> int:
     """Full-text search."""
     from .adapters.sqlite_index import SQLiteIndex
-    
-    limit = getattr(args, 'limit', 50)
-    snippets = getattr(args, 'snippets', False)
-    aliases = getattr(args, 'aliases', False)
-    fields = getattr(args, 'fields', None)
-    
+
+    limit = getattr(args, "limit", 50)
+    snippets = getattr(args, "snippets", False)
+    aliases = getattr(args, "aliases", False)
+    fields = getattr(args, "fields", None)
+
     if isinstance(rt.index, SQLiteIndex):
         results = list(rt.index.search(args.query, limit=limit))
-        
+
         # Add alias matches if requested
         if aliases:
             conn = rt.index._conn()
             try:
                 alias_rows = conn.execute(
                     "SELECT DISTINCT note_id FROM kv WHERE key = 'core/alias' AND value LIKE ?",
-                    (f"%{args.query}%",)
+                    (f"%{args.query}%",),
                 ).fetchall()
-                
+
                 for row in alias_rows:
                     if row[0] not in results:
                         results.append(row[0])
             finally:
                 conn.close()
-        
+
         # Output with fields
         if fields:
-            field_list = [f.strip() for f in fields.split(',')]
+            field_list = [f.strip() for f in fields.split(",")]
             conn = rt.index._conn()
             try:
                 for nid in results:
                     values = []
                     for field in field_list:
-                        if field == 'id':
+                        if field == "id":
                             values.append(nid)
-                        elif field == 'title':
+                        elif field == "title":
                             row = conn.execute(
-                                "SELECT title FROM notes WHERE id = ?",
-                                (nid,)
+                                "SELECT title FROM notes WHERE id = ?", (nid,)
                             ).fetchone()
                             values.append(row[0] if row else "")
                         else:
@@ -268,38 +261,40 @@ def cmd_find(args: argparse.Namespace, rt: Any) -> int:
         results = rt.index.search(args.query, limit=limit)
         for nid in sorted(results):
             print(nid)
-    
+
     return 0
 
 
 def cmd_backrefs(args: argparse.Namespace, rt: Any) -> int:
     """Show incoming links with context."""
-    context = getattr(args, 'context', 2)
-    
+    context = getattr(args, "context", 2)
+
     incoming = rt.index.links_in(args.id)
-    
+
     if args.json:
         output = []
         for link in incoming:
             note = rt.vault.get(link.source)
             if note and link.range:
                 # Extract context lines around the link
-                lines = note.body.raw[:link.range.start].splitlines()
+                lines = note.body.raw[: link.range.start].splitlines()
                 start_line = max(0, len(lines) - context)
                 end_line = len(lines) + context
                 context_lines = note.body.raw.splitlines()[start_line:end_line]
-                output.append({
-                    "source": link.source,
-                    "start": link.range.start,
-                    "end": link.range.end,
-                    "context": "\n".join(context_lines),
-                })
+                output.append(
+                    {
+                        "source": link.source,
+                        "start": link.range.start,
+                        "end": link.range.end,
+                        "context": "\n".join(context_lines),
+                    }
+                )
         print(json.dumps(output, indent=2))
     else:
         for link in incoming:
             note = rt.vault.get(link.source)
             if note and link.range:
-                lines = note.body.raw[:link.range.start].splitlines()
+                lines = note.body.raw[: link.range.start].splitlines()
                 start_line = max(0, len(lines) - context)
                 end_line = len(lines) + context
                 context_lines = note.body.raw.splitlines()[start_line:end_line]
@@ -307,35 +302,35 @@ def cmd_backrefs(args: argparse.Namespace, rt: Any) -> int:
                     print(f"\n{link.source}:")
                 for line in context_lines:
                     print(f"  {line}")
-    
+
     return 0
 
 
 def cmd_graph(args: argparse.Namespace, rt: Any) -> int:
     """Export graph data."""
     from .adapters.sqlite_index import SQLiteIndex
-    
+
     if not isinstance(rt.index, SQLiteIndex):
         print("Error: Graph command requires SQLiteIndex", file=sys.stderr)
         return 1
-    
+
     graph_data = rt.index.graph_data()
-    
-    if getattr(args, 'dot', False):
+
+    if getattr(args, "dot", False):
         # Output DOT format
         print("digraph vault {")
-        print('  rankdir=LR;')
-        print('  node [shape=box];')
-        for node in graph_data['nodes']:
-            label = node['title'] or node['id']
+        print("  rankdir=LR;")
+        print("  node [shape=box];")
+        for node in graph_data["nodes"]:
+            label = node["title"] or node["id"]
             print(f'  "{node["id"]}" [label="{label}"];')
-        for edge in graph_data['edges']:
+        for edge in graph_data["edges"]:
             print(f'  "{edge["source"]}" -> "{edge["target"]}";')
         print("}")
     else:
         # Output JSON format (default)
         print(json.dumps(graph_data, indent=2))
-    
+
     return 0
 
 
@@ -343,7 +338,7 @@ def cmd_lint(args: argparse.Namespace, rt: Any) -> int:
     """Validate links and frontmatter."""
     rt.index.rebuild()
     rule = DeadLinksRule()
-    
+
     all_findings: list[tuple[str, Finding]] = []
     for nid in rt.vault.list_ids():
         note = rt.vault.get(nid)
@@ -351,15 +346,12 @@ def cmd_lint(args: argparse.Namespace, rt: Any) -> int:
             findings = rule.check(note, rt.resolver, rt.index)
             for f in findings:
                 all_findings.append((nid, f))
-            
+
             # Check frontmatter ID mismatch
             if "id" in note.meta and note.meta["id"] != nid:
-                msg = (
-                    f"Frontmatter ID '{note.meta['id']}' "
-                    f"doesn't match filename '{nid}'"
-                )
+                msg = f"Frontmatter ID '{note.meta['id']}' doesn't match filename '{nid}'"
                 all_findings.append((nid, Finding("error", msg)))
-    
+
     if args.json:
         output = [
             {
@@ -375,24 +367,24 @@ def cmd_lint(args: argparse.Namespace, rt: Any) -> int:
         for nid, f in all_findings:
             if not args.quiet:
                 print(f"{nid}: [{f.severity}] {f.message}")
-    
+
     return 1 if any(f.severity == "error" for _, f in all_findings) else 0
 
 
 def cmd_export_quartz(args: argparse.Namespace, rt: Any) -> int:
     """Export to Quartz format with graph.json."""
     outdir = Path(args.outdir)
-    
+
     # Get assets dir if specified
     assets_dir = None
-    if getattr(args, 'assets_dir', None):
+    if getattr(args, "assets_dir", None):
         assets_dir = Path(args.assets_dir)
-    
+
     # Get KaTeX auto setting from config or args
     katex_auto = False
     if rt.config.export.quartz:
         katex_auto = rt.config.export.quartz.katex.auto
-    
+
     adapter = QuartzAdapter(
         rt.vault,
         outdir,
@@ -411,14 +403,14 @@ def cmd_rm(args: argparse.Namespace, rt: Any) -> int:
     if rt.vault.get(args.id) is None:
         print(f"Note {args.id} not found", file=sys.stderr)
         return 1
-    
+
     # Confirm unless --yes
     if not args.yes:
         response = input(f"Delete note {args.id}? [y/N] ")
         if response.lower() not in ("y", "yes"):
             print("Aborted")
             return 0
-    
+
     rt.vault.storage.delete_raw(args.id)
     if not args.quiet:
         print(f"Deleted {args.id}")
@@ -430,7 +422,7 @@ def cmd_yank(args: argparse.Namespace, rt: Any) -> int:
     # Parse ref into id and optional anchor
     ref = args.ref
     anchor = None
-    
+
     if "#" in ref:
         nid, anchor_str = ref.split("#", 1)
         if anchor_str.startswith("^"):
@@ -441,16 +433,16 @@ def cmd_yank(args: argparse.Namespace, rt: Any) -> int:
             anchor = Anchor(kind="heading", value=anchor_str)
     else:
         nid = ref
-    
+
     # Get note
     note = rt.vault.get(nid)
     if note is None:
         print(f"Note {nid} not found", file=sys.stderr)
         return 1
-    
+
     # Get slice
     start, end = slice_by_anchor(note, anchor)
-    
+
     if start == end:
         # Empty slice means anchor not found
         if anchor:
@@ -459,9 +451,9 @@ def cmd_yank(args: argparse.Namespace, rt: Any) -> int:
             return 1
         # Shouldn't happen for no anchor case, but handle it
         return 0
-    
+
     slice_text = note.body.raw[start:end]
-    
+
     # Handle --plain flag for fenced blocks
     if args.plain and slice_text.strip().startswith("```"):
         lines = slice_text.splitlines(keepends=True)
@@ -474,25 +466,25 @@ def cmd_yank(args: argparse.Namespace, rt: Any) -> int:
                 if lines[i].strip() == "```":
                     slice_text = "".join(lines[1:i])
                     break
-    
+
     # Handle --context flag
     if args.context > 0:
         # Add N lines before and after
         all_lines = note.body.raw.splitlines(keepends=True)
         slice_lines = slice_text.splitlines(keepends=True)
-        
+
         # Find where slice starts in the full text
         slice_start_line = 0
         for i, line in enumerate(all_lines):
             if slice_lines and line == slice_lines[0]:
                 slice_start_line = i
                 break
-        
+
         start_line = max(0, slice_start_line - args.context)
         end_line = min(len(all_lines), slice_start_line + len(slice_lines) + args.context)
-        
+
         slice_text = "".join(all_lines[start_line:end_line])
-    
+
     print(slice_text, end="")
     return 0
 
@@ -503,7 +495,7 @@ def cmd_meta_get(args: argparse.Namespace, rt: Any) -> int:
     if note is None:
         print(f"Note {args.id} not found", file=sys.stderr)
         return 1
-    
+
     if args.keys:
         # Print specific keys
         for key in args.keys:
@@ -522,7 +514,7 @@ def cmd_meta_get(args: argparse.Namespace, rt: Any) -> int:
         else:
             for key, value in note.meta.items():
                 print(f"{key}={value}")
-    
+
     return 0
 
 
@@ -532,20 +524,20 @@ def cmd_meta_set(args: argparse.Namespace, rt: Any) -> int:
     if note is None:
         print(f"Note {args.id} not found", file=sys.stderr)
         return 1
-    
+
     # Parse key=value pairs
     for kv in args.pairs:
         if "=" not in kv:
             print(f"Invalid format: {kv}. Expected key=value", file=sys.stderr)
             return 1
-        
+
         key, _, value_str = kv.partition("=")
         key = key.strip()
         value_str = value_str.strip()
-        
+
         # Try to parse value intelligently
         value: Any = value_str
-        
+
         # Check for JSON objects/arrays
         if value_str.startswith("{") or value_str.startswith("["):
             try:
@@ -564,15 +556,15 @@ def cmd_meta_set(args: argparse.Namespace, rt: Any) -> int:
                     value = int(value_str)
             except ValueError:
                 pass  # Use as string
-        
+
         note.meta[key] = value
-    
+
     # Save note
     rt.vault.put(note)
-    
+
     if not args.quiet:
         print(f"Updated metadata for {args.id}")
-    
+
     return 0
 
 
@@ -582,58 +574,57 @@ def cmd_meta_unset(args: argparse.Namespace, rt: Any) -> int:
     if note is None:
         print(f"Note {args.id} not found", file=sys.stderr)
         return 1
-    
+
     removed = []
     for key in args.keys:
         if key in note.meta:
             del note.meta[key]
             removed.append(key)
-    
+
     if removed:
         rt.vault.put(note)
         if not args.quiet:
             print(f"Removed keys: {', '.join(removed)}")
     elif not args.quiet:
         print("No keys removed")
-    
+
     return 0
 
 
 def cmd_meta_show(args: argparse.Namespace, rt: Any) -> int:
     """Pretty-print frontmatter for a note."""
     import yaml
-    
+
     note = rt.vault.get(args.id)
     if note is None:
         print(f"Note {args.id} not found", file=sys.stderr)
         return 1
-    
+
     if note.meta:
         print(yaml.dump(dict(note.meta), sort_keys=False, allow_unicode=True), end="")
     else:
         print("# No metadata")
-    
+
     return 0
 
 
 def cmd_resolve(args: argparse.Namespace, rt: Any) -> int:
     """Resolve text to note ID via aliases or title."""
     from .adapters.sqlite_index import SQLiteIndex
-    
+
     text = args.text
-    
+
     if not isinstance(rt.index, SQLiteIndex):
         print("Error: Resolve command requires SQLiteIndex", file=sys.stderr)
         return 1
-    
+
     conn = rt.index._conn()
     try:
         # First, check for exact alias match
         alias_rows = conn.execute(
-            "SELECT note_id FROM kv WHERE key = 'core/alias' AND value = ?",
-            (text,)
+            "SELECT note_id FROM kv WHERE key = 'core/alias' AND value = ?", (text,)
         ).fetchall()
-        
+
         if len(alias_rows) == 1:
             # Exact alias match
             print(alias_rows[0][0])
@@ -645,19 +636,15 @@ def cmd_resolve(args: argparse.Namespace, rt: Any) -> int:
                 for row in alias_rows:
                     note_id = row[0]
                     title_row = conn.execute(
-                        "SELECT title FROM notes WHERE id = ?",
-                        (note_id,)
+                        "SELECT title FROM notes WHERE id = ?", (note_id,)
                     ).fetchone()
                     title = title_row[0] if title_row else ""
                     print(f"  {note_id}\t{title} (alias)", file=sys.stderr)
             return 2
-        
+
         # Check for exact title match
-        title_rows = conn.execute(
-            "SELECT id FROM notes WHERE title = ?",
-            (text,)
-        ).fetchall()
-        
+        title_rows = conn.execute("SELECT id FROM notes WHERE title = ?", (text,)).fetchall()
+
         if len(title_rows) == 1:
             # Exact title match
             print(title_rows[0][0])
@@ -669,29 +656,28 @@ def cmd_resolve(args: argparse.Namespace, rt: Any) -> int:
                 for row in title_rows:
                     print(f"  {row[0]}\t{text}", file=sys.stderr)
             return 2
-        
+
         # No exact match - show candidates
         if not args.quiet:
             print(f"No exact match for '{text}'. Candidates:", file=sys.stderr)
-            
+
             # Find similar titles
             similar_titles = conn.execute(
-                "SELECT id, title FROM notes WHERE title LIKE ? LIMIT 10",
-                (f"%{text}%",)
+                "SELECT id, title FROM notes WHERE title LIKE ? LIMIT 10", (f"%{text}%",)
             ).fetchall()
-            
+
             for note_id, title in similar_titles:
                 print(f"  {note_id}\t{title}", file=sys.stderr)
-            
+
             # Find similar aliases
             similar_aliases = conn.execute(
                 "SELECT note_id, value FROM kv WHERE key = 'core/alias' AND value LIKE ? LIMIT 10",
-                (f"%{text}%",)
+                (f"%{text}%",),
             ).fetchall()
-            
+
             for note_id, alias in similar_aliases:
                 print(f"  {note_id}\t{alias} (alias)", file=sys.stderr)
-        
+
         return 2  # Ambiguous/not found
     finally:
         conn.close()
@@ -703,47 +689,51 @@ def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
     import sqlite3
 
     from .adapters.sqlite_index import SQLiteIndex
-    
+
     # If --versions flag is set, show version information
-    if getattr(args, 'versions', False):
+    if getattr(args, "versions", False):
         print("Version Information:")
         print(f"  Hypomnemata: {__version__}")
         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         print(f"  Python: {py_ver}")
         print(f"  Platform: {platform.system()} {platform.release()}")
-        
+
         # Show SQLite version
         print(f"  SQLite: {sqlite3.sqlite_version}")
-        
+
         # Show optional dependency versions if available
         try:
             import yaml
+
             print(f"  PyYAML: {yaml.__version__}")
         except (ImportError, AttributeError):
             print("  PyYAML: not installed")
-        
+
         try:
             import fastapi
+
             print(f"  FastAPI: {fastapi.__version__}")
         except (ImportError, AttributeError):
             print("  FastAPI: not installed")
-        
+
         try:
             import uvicorn
+
             print(f"  Uvicorn: {uvicorn.__version__}")
         except (ImportError, AttributeError):
             print("  Uvicorn: not installed")
-        
+
         try:
             import watchdog
-            print(f"  Watchdog: {watchdog.__version__}")  # type: ignore[attr-defined]
+
+            print(f"  Watchdog: {watchdog.__version__}")
         except (ImportError, AttributeError):
             print("  Watchdog: not installed")
-        
+
         return 0
-    
+
     issues = []
-    
+
     # Check vault exists and is writable
     vault_path = rt.vault.storage.root
     if not vault_path.exists():
@@ -754,7 +744,7 @@ def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
         issues.append("vault_not_dir")
     else:
         print(f"✓ Vault exists: {vault_path}")
-        
+
         # Check if writable
         try:
             test_file = vault_path / ".hypo_test_write"
@@ -764,7 +754,7 @@ def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
         except Exception as e:
             print(f"✗ Vault is not writable: {e}")
             issues.append("vault_not_writable")
-    
+
     # Check DB exists and schema is correct
     if isinstance(rt.index, SQLiteIndex):
         db_path = rt.index.db_path
@@ -773,14 +763,14 @@ def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
             issues.append("db_missing")
         else:
             print(f"✓ Database exists: {db_path}")
-            
+
             # Check schema version
             conn = rt.index._conn()
             try:
                 schema_version = conn.execute(
                     "SELECT value FROM meta WHERE key = 'schema_version'"
                 ).fetchone()
-                
+
                 if schema_version:
                     print(f"✓ Schema version: {schema_version[0]}")
                 else:
@@ -793,19 +783,19 @@ def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
                 conn.close()
     else:
         print("⚠ Not using SQLiteIndex")
-    
+
     # Sample parse on N random notes
     all_ids = list(rt.vault.list_ids())
     if all_ids:
         sample_size = min(10, len(all_ids))
         sample_ids = random.sample(all_ids, sample_size)
-        
+
         parse_errors = 0
         for nid in sample_ids:
             note = rt.vault.get(nid)
             if note is None:
                 parse_errors += 1
-        
+
         if parse_errors == 0:
             print(f"✓ Sampled {sample_size} notes, all parsed successfully")
         else:
@@ -813,28 +803,28 @@ def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
             issues.append("parse_errors")
     else:
         print("⚠ No notes found in vault")
-    
+
     # Report counts
     if isinstance(rt.index, SQLiteIndex):
         conn = rt.index._conn()
         try:
             note_count = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
             link_count = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
-            
+
             # Count orphans (notes with no incoming or outgoing links)
             orphan_count = conn.execute("""
                 SELECT COUNT(*) FROM notes
                 WHERE id NOT IN (SELECT DISTINCT src FROM links)
                   AND id NOT IN (SELECT DISTINCT dst FROM links)
             """).fetchone()[0]
-            
+
             print("\nCounts:")
             print(f"  Notes: {note_count}")
             print(f"  Links: {link_count}")
             print(f"  Orphans: {orphan_count}")
         finally:
             conn.close()
-    
+
     # Recommendations
     if issues:
         print("\nRecommendations:")
@@ -851,9 +841,9 @@ def cmd_doctor(args: argparse.Namespace, rt: Any) -> int:
 def cmd_watch(args: argparse.Namespace, rt: Any) -> int:
     """Watch vault for changes and incrementally reindex."""
     from .watch import watch_vault
-    
-    debounce_ms = getattr(args, 'debounce_ms', 150)
-    
+
+    debounce_ms = getattr(args, "debounce_ms", 150)
+
     return watch_vault(
         vault_path=rt.vault.storage.root,
         index=rt.index,
@@ -871,63 +861,62 @@ def cmd_serve(args: argparse.Namespace, rt: Any) -> int:
         from .api.app import create_app, generate_token
     except ImportError as e:
         print(
-            "Error: API dependencies not installed. "
-            "Install with: pip install hypomnemata[api]",
-            file=sys.stderr
+            "Error: API dependencies not installed. Install with: pip install hypomnemata[api]",
+            file=sys.stderr,
         )
         print(f"Details: {e}", file=sys.stderr)
         return 1
-    
+
     # Determine token
-    token_arg = getattr(args, 'token', 'auto')
+    token_arg = getattr(args, "token", "auto")
     token = None
-    
-    if token_arg == 'auto':
+
+    if token_arg == "auto":
         token = generate_token()
         print(f"Generated bearer token: {token}")
         print(f"Use in requests: Authorization: Bearer {token}")
-    elif token_arg == 'none':
+    elif token_arg == "none":
         print("Warning: Running without authentication. Only use in trusted environments.")
         token = None
     else:
         token = token_arg
-    
+
     # Create app
-    enable_cors = getattr(args, 'cors', False)
-    openapi = getattr(args, 'openapi', False)
+    enable_cors = getattr(args, "cors", False)
+    openapi = getattr(args, "openapi", False)
     app = create_app(rt, token=token, enable_cors=enable_cors)
-    
+
     # Enable/disable OpenAPI docs
     if openapi and token:
         # Re-enable docs
         app.docs_url = "/docs"
         app.redoc_url = "/redoc"
-    
+
     # Get host and port
-    host = getattr(args, 'host', '127.0.0.1')
-    port = getattr(args, 'port', 8765)
-    
+    host = getattr(args, "host", "127.0.0.1")
+    port = getattr(args, "port", 8765)
+
     print(f"Starting server on http://{host}:{port}")
     if token:
         print(f"Authorization required: Bearer {token}")
-    
+
     # Run server
     uvicorn.run(app, host=host, port=port, log_level="info")
-    
+
     return 0
 
 
 def cmd_import_plan(args: argparse.Namespace, rt: Any) -> int:
     """Scan source and build import plan."""
     from .import_migrate.plan import build_import_plan, save_plan_csv, save_plan_json
-    
+
     src_dir = Path(args.src).resolve()
     if not src_dir.exists():
         print(f"Source directory does not exist: {src_dir}", file=sys.stderr)
         return 1
-    
+
     # Build plan
-    alias_keys = args.alias_keys.split(',') if args.alias_keys else None
+    alias_keys = args.alias_keys.split(",") if args.alias_keys else None
     plan = build_import_plan(
         src_dir=src_dir,
         glob_pattern=args.glob,
@@ -937,37 +926,37 @@ def cmd_import_plan(args: argparse.Namespace, rt: Any) -> int:
         alias_keys=alias_keys,
         strict=args.strict,
     )
-    
+
     # Save outputs
     if args.map:
         map_path = Path(args.map)
         save_plan_json(plan, map_path)
         if not args.quiet:
             print(f"Saved plan JSON to: {map_path}")
-    
+
     if args.csv:
         csv_path = Path(args.csv)
         save_plan_csv(plan, csv_path)
         if not args.quiet:
             print(f"Saved plan CSV to: {csv_path}")
-    
+
     # Print summary
     if not args.quiet:
         ok_count = sum(1 for item in plan.items if item.status == "ok")
         conflict_count = sum(1 for item in plan.items if item.status == "conflict")
         error_count = sum(1 for item in plan.items if item.status == "error")
-        
+
         print("\nImport Plan Summary:")
         print(f"  Total items: {len(plan.items)}")
         print(f"  OK: {ok_count}")
         print(f"  Conflicts: {conflict_count}")
         print(f"  Errors: {error_count}")
-        
+
         if plan.conflicts:
             print("\nConflicts detected:")
             for key, paths in plan.conflicts.items():
                 print(f"  {key}: {len(paths)} files")
-    
+
     return 1 if plan.conflicts or error_count > 0 else 0
 
 
@@ -975,9 +964,9 @@ def cmd_import_apply(args: argparse.Namespace, rt: Any) -> int:
     """Execute import based on plan."""
     from .import_migrate.apply import apply_import, save_manifest
     from .import_migrate.plan import build_import_plan, load_plan_json
-    
+
     dst_vault = Path(args.dst_vault).resolve()
-    
+
     # Load or build plan
     if args.plan:
         plan = load_plan_json(Path(args.plan))
@@ -987,19 +976,19 @@ def cmd_import_apply(args: argparse.Namespace, rt: Any) -> int:
         if not src_dir.exists():
             print(f"Source directory does not exist: {src_dir}", file=sys.stderr)
             return 1
-        
+
         plan = build_import_plan(
             src_dir=src_dir,
             glob_pattern="**/*.md",
             id_strategy="random",
             id_bytes=rt.config.id.bytes,
         )
-    
+
     # Check for confirmation if not dry-run
     if not args.dry_run and not args.confirm:
         print("Error: --confirm required to execute import", file=sys.stderr)
         return 1
-    
+
     # Execute import
     try:
         manifest = apply_import(
@@ -1009,18 +998,18 @@ def cmd_import_apply(args: argparse.Namespace, rt: Any) -> int:
             dry_run=args.dry_run,
             on_conflict=args.on_conflict,
         )
-        
+
         # Save manifest
         if not args.dry_run:
             manifest_dir = dst_vault / ".hypo"
             manifest_dir.mkdir(exist_ok=True)
             manifest_path = manifest_dir / "import-manifest.json"
             save_manifest(manifest, manifest_path)
-            
+
             if not args.quiet:
                 print(f"\nImport completed. Manifest saved to: {manifest_path}")
                 print(f"  Imported: {len(manifest.entries)} files")
-        
+
         return 0
     except Exception as e:
         print(f"Error during import: {e}", file=sys.stderr)
@@ -1030,17 +1019,17 @@ def cmd_import_apply(args: argparse.Namespace, rt: Any) -> int:
 def cmd_import_rollback(args: argparse.Namespace, rt: Any) -> int:
     """Rollback import operations."""
     from .import_migrate.rollback import rollback_from_file
-    
+
     manifest_path = Path(args.manifest)
     if not manifest_path.exists():
         print(f"Manifest not found: {manifest_path}", file=sys.stderr)
         return 1
-    
+
     # Check for confirmation if not dry-run
     if not args.dry_run and not args.confirm:
         print("Error: --confirm required to execute rollback", file=sys.stderr)
         return 1
-    
+
     try:
         rollback_from_file(manifest_path, dry_run=args.dry_run)
         if not args.quiet:
@@ -1055,35 +1044,35 @@ def cmd_migrate_links(args: argparse.Namespace, rt: Any) -> int:
     """Migrate wiki/MD links to ID-based format."""
     from .adapters.sqlite_index import SQLiteIndex
     from .import_migrate.migrate import apply_migration, migrate_file_links
-    
+
     if not isinstance(rt.index, SQLiteIndex):
         print("Error: Migrate requires SQLiteIndex", file=sys.stderr)
         return 1
-    
+
     # Check for confirmation if not dry-run
     if not args.dry_run and not args.confirm:
         print("Error: --confirm required to execute migration", file=sys.stderr)
         return 1
-    
+
     vault_path = rt.vault.storage.root
-    
+
     # Ensure index is up to date
     if not args.quiet:
         print("Updating index...")
     rt.index.rebuild()
-    
+
     # Migrate all files in vault
     total_files = 0
     total_changes = 0
     total_errors = 0
-    
+
     for note_id in rt.vault.list_ids():
         file_path = vault_path / f"{note_id}.md"
         if not file_path.exists():
             continue
-        
+
         total_files += 1
-        
+
         result = migrate_file_links(
             file_path=file_path,
             vault_path=vault_path,
@@ -1092,25 +1081,25 @@ def cmd_migrate_links(args: argparse.Namespace, rt: Any) -> int:
             resolver_mode=args.resolver,
             prefer=args.prefer,
         )
-        
+
         if result.errors:
             total_errors += len(result.errors)
             if not args.quiet:
                 print(f"\n{file_path}:")
                 for error in result.errors:
                     print(f"  ! {error}")
-        
+
         if result.changes > 0:
             total_changes += result.changes
             apply_migration(result, dry_run=args.dry_run)
-    
+
     # Print summary
     if not args.quiet:
         print("\nMigration Summary:")
         print(f"  Files processed: {total_files}")
         print(f"  Links changed: {total_changes}")
         print(f"  Errors: {total_errors}")
-    
+
     return 1 if total_errors > 0 else 0
 
 
@@ -1118,17 +1107,17 @@ def cmd_audit_links(args: argparse.Namespace, rt: Any) -> int:
     """Audit vault for link integrity."""
     from .adapters.sqlite_index import SQLiteIndex
     from .import_migrate.audit import audit_vault
-    
+
     if not isinstance(rt.index, SQLiteIndex):
         print("Error: Audit requires SQLiteIndex", file=sys.stderr)
         return 1
-    
+
     # Ensure index is up to date
     rt.index.rebuild()
-    
+
     # Run audit
     report = audit_vault(rt.vault, rt.index, strict=args.strict)
-    
+
     # Print results
     if args.json:
         output = {
@@ -1157,21 +1146,21 @@ def cmd_audit_links(args: argparse.Namespace, rt: Any) -> int:
         print(f"  Duplicate labels: {report.duplicate_labels}")
         if args.strict:
             print(f"  Un-migrated links: {report.unmigrated_links}")
-        
+
         if report.findings:
             print("\nFindings:")
             for finding in report.findings:
                 print(f"  [{finding.severity}] {finding.note_id}: {finding.message}")
-    
+
     return 1 if report.has_errors else 0
 
 
 def cmd_fmt(args: argparse.Namespace, rt: Any) -> int:
     """Format notes with canonical frontmatter and link syntax."""
     from .format.formatter import FormatOptions, format_file
-    
+
     vault_path = rt.vault.storage.root
-    
+
     # Build format options
     options = FormatOptions(
         frontmatter=args.frontmatter,
@@ -1182,31 +1171,31 @@ def cmd_fmt(args: argparse.Namespace, rt: Any) -> int:
         strip_trailing=args.strip_trailing,
         ensure_final_eol=args.ensure_final_eol,
     )
-    
+
     # Parse key order if provided
     if args.key_order:
-        options.key_order = [k.strip() for k in args.key_order.split(',')]
-    
+        options.key_order = [k.strip() for k in args.key_order.split(",")]
+
     # Get list of files to format
     note_ids = list(rt.vault.list_ids())
-    
+
     # Filter to changed only if requested
     if args.changed_only:
         # We'll check as we format
         pass
-    
+
     # Track results
     changed_files = []
     unchanged_files = []
-    
+
     for note_id in note_ids:
         file_path = vault_path / f"{note_id}.md"
         if not file_path.exists():
             continue
-        
+
         try:
             result = format_file(file_path, options, dry_run=args.dry_run)
-            
+
             if result.changed:
                 changed_files.append((note_id, result.changes))
                 if not args.quiet:
@@ -1221,32 +1210,32 @@ def cmd_fmt(args: argparse.Namespace, rt: Any) -> int:
             print(f"Error formatting {note_id}: {e}", file=sys.stderr)
             if not args.dry_run:
                 return 1
-    
+
     # Summary
     if not args.quiet:
         print(f"\nFormatted {len(changed_files)} files, {len(unchanged_files)} unchanged")
-    
+
     # Exit 1 if files would change and not confirmed (CI mode)
     if args.dry_run and changed_files and not args.confirm:
         return 1
-    
+
     return 0
 
 
 def cmd_verify_assets(args: argparse.Namespace, rt: Any) -> int:
     """Verify asset integrity in vault."""
     from .assets.verify import format_report, verify_assets
-    
+
     vault_path = rt.vault.storage.root
     assets_dir = Path(args.assets_dir) if args.assets_dir else vault_path / "assets"
-    
+
     # Collect all notes - use full file content, not just body
     notes = {}
     for note_id in rt.vault.list_ids():
         note_path = vault_path / f"{note_id}.md"
         if note_path.exists():
-            notes[note_id] = note_path.read_text(encoding='utf-8')
-    
+            notes[note_id] = note_path.read_text(encoding="utf-8")
+
     # Run verification
     report = verify_assets(
         vault_root=vault_path,
@@ -1255,11 +1244,11 @@ def cmd_verify_assets(args: argparse.Namespace, rt: Any) -> int:
         compute_hashes=args.hashes,
         write_sidecars=args.write_sidecars,
     )
-    
+
     # Output report
     output = format_report(report, json_output=args.json)
     print(output)
-    
+
     # Exit 1 if there are missing references
     return 1 if report.missing_refs else 0
 
@@ -1268,18 +1257,16 @@ def cmd_fix(args: argparse.Namespace, rt: Any) -> int:
     """Apply targeted autofixes to notes."""
     # For MVP, we'll implement basic fixes
     # Future: --rename-assets and other fixes
-    
+
     if not args.quiet:
         print("Fix command: No fixes implemented yet")
-    
+
     return 0
 
 
 def main() -> None:
     """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        prog="hypo", description="Hypomnemata CLI"
-    )
+    parser = argparse.ArgumentParser(prog="hypo", description="Hypomnemata CLI")
     parser.add_argument(
         "--version",
         action="store_true",
@@ -1303,27 +1290,21 @@ def main() -> None:
         default=None,
         help="Path to SQLite index DB (overrides config)",
     )
-    parser.add_argument(
-        "-q", "--quiet", action="store_true", help="Minimize output"
-    )
-    parser.add_argument(
-        "--json", action="store_true", help="Machine-readable output"
-    )
-    
+    parser.add_argument("-q", "--quiet", action="store_true", help="Minimize output")
+    parser.add_argument("--json", action="store_true", help="Machine-readable output")
+
     subparsers = parser.add_subparsers(dest="cmd", required=False)
-    
+
     # id command
     subparsers.add_parser("id", help="Print a new random ID")
-    
+
     # reindex command
     parser_reindex = subparsers.add_parser("reindex", help="Build or repair SQLite index")
-    parser_reindex.add_argument(
-        "--full", action="store_true", help="Force full rebuild"
-    )
+    parser_reindex.add_argument("--full", action="store_true", help="Force full rebuild")
     parser_reindex.add_argument(
         "--hash", action="store_true", help="Use SHA256 hash for change detection"
     )
-    
+
     # new command
     parser_new = subparsers.add_parser("new", help="Create a new note")
     parser_new.add_argument(
@@ -1338,76 +1319,63 @@ def main() -> None:
         action="store_true",
         help="Open in $EDITOR after creation",
     )
-    
+
     # open command
-    parser_open = subparsers.add_parser(
-        "open", help="Print raw Markdown to stdout"
-    )
+    parser_open = subparsers.add_parser("open", help="Print raw Markdown to stdout")
     parser_open.add_argument("id", help="Note ID")
-    
+
     # edit command
     parser_edit = subparsers.add_parser("edit", help="Open in $EDITOR")
     parser_edit.add_argument("id", help="Note ID")
-    
+
     # ls command
     parser_ls = subparsers.add_parser("ls", help="List notes with filters")
     parser_ls.add_argument("--grep", help="Filter by content pattern")
+    parser_ls.add_argument("--orphans", action="store_true", help="Show notes with no links")
     parser_ls.add_argument(
-        "--orphans", action="store_true", help="Show notes with no links"
+        "--with-titles",
+        dest="with_titles",
+        action="store_true",
+        help="Print id and title (tab-separated)",
     )
-    parser_ls.add_argument(
-        "--with-titles", dest="with_titles", action="store_true",
-        help="Print id and title (tab-separated)"
-    )
-    parser_ls.add_argument(
-        "--format", choices=["json"], help="Output format (json)"
-    )
-    
+    parser_ls.add_argument("--format", choices=["json"], help="Output format (json)")
+
     # find command
     parser_find = subparsers.add_parser("find", help="Full-text search")
     parser_find.add_argument("query", help="Search query")
-    parser_find.add_argument(
-        "--limit", type=int, default=50, help="Maximum results (default: 50)"
-    )
+    parser_find.add_argument("--limit", type=int, default=50, help="Maximum results (default: 50)")
     parser_find.add_argument(
         "--snippets", action="store_true", help="Show snippets with highlights"
     )
-    parser_find.add_argument(
-        "--aliases", action="store_true", help="Include alias matches"
-    )
-    parser_find.add_argument(
-        "--fields", help="Comma-separated fields to display (e.g., id,title)"
-    )
-    
+    parser_find.add_argument("--aliases", action="store_true", help="Include alias matches")
+    parser_find.add_argument("--fields", help="Comma-separated fields to display (e.g., id,title)")
+
     # resolve command
     parser_resolve = subparsers.add_parser("resolve", help="Resolve text to note ID")
     parser_resolve.add_argument("text", help="Text to resolve (alias or title)")
-    
+
     # doctor command
     parser_doctor = subparsers.add_parser("doctor", help="Run diagnostics on vault and index")
     parser_doctor.add_argument(
-        "--versions", action="store_true",
-        help="Show version information for dependencies"
+        "--versions", action="store_true", help="Show version information for dependencies"
     )
-    
+
     # backrefs command
-    parser_backrefs = subparsers.add_parser(
-        "backrefs", help="Show incoming links with context"
-    )
+    parser_backrefs = subparsers.add_parser("backrefs", help="Show incoming links with context")
     parser_backrefs.add_argument("id", help="Note ID")
     parser_backrefs.add_argument(
         "--context", type=int, default=2, help="Context lines around link (default: 2)"
     )
-    
+
     # graph command
     parser_graph = subparsers.add_parser("graph", help="Export graph data")
     parser_graph.add_argument(
         "--dot", action="store_true", help="Output in DOT format for Graphviz"
     )
-    
+
     # lint command
     subparsers.add_parser("lint", help="Validate links and frontmatter")
-    
+
     # export command
     parser_export = subparsers.add_parser("export", help="Export vault")
     export_sub = parser_export.add_subparsers(dest="export_type", required=True)
@@ -1418,12 +1386,12 @@ def main() -> None:
         dest="assets_dir",
         help="Copy assets from this directory to output/assets/",
     )
-    
+
     # rm command
     parser_rm = subparsers.add_parser("rm", help="Delete/trash a note")
     parser_rm.add_argument("id", help="Note ID")
     parser_rm.add_argument("--yes", action="store_true", help="Skip confirmation")
-    
+
     # yank command
     parser_yank = subparsers.add_parser("yank", help="Print a slice of a note")
     parser_yank.add_argument("ref", help="Note reference: <id> or <id>#<anchor>")
@@ -1433,266 +1401,253 @@ def main() -> None:
     parser_yank.add_argument(
         "--context", type=int, default=0, help="Include N lines before/after (default: 0)"
     )
-    
+
     # meta command
     parser_meta = subparsers.add_parser("meta", help="Manage note metadata")
     meta_sub = parser_meta.add_subparsers(dest="meta_cmd", required=True)
-    
+
     parser_meta_get = meta_sub.add_parser("get", help="Get metadata values")
     parser_meta_get.add_argument("id", help="Note ID")
     parser_meta_get.add_argument("--keys", nargs="+", help="Specific keys to retrieve")
-    
+
     parser_meta_set = meta_sub.add_parser("set", help="Set metadata values")
     parser_meta_set.add_argument("id", help="Note ID")
     parser_meta_set.add_argument("pairs", nargs="+", help="key=value pairs")
-    
+
     parser_meta_unset = meta_sub.add_parser("unset", help="Remove metadata keys")
     parser_meta_unset.add_argument("id", help="Note ID")
     parser_meta_unset.add_argument("keys", nargs="+", help="Keys to remove")
-    
+
     parser_meta_show = meta_sub.add_parser("show", help="Pretty-print frontmatter")
     parser_meta_show.add_argument("id", help="Note ID")
-    
+
     # watch command
     parser_watch = subparsers.add_parser("watch", help="Watch vault for changes")
     parser_watch.add_argument(
-        "--debounce-ms", type=int, default=150,
-        help="Debounce window in milliseconds (default: 150)"
+        "--debounce-ms",
+        type=int,
+        default=150,
+        help="Debounce window in milliseconds (default: 150)",
     )
-    
+
     # locate command
     parser_locate = subparsers.add_parser("locate", help="Get precise location of note or anchor")
     parser_locate.add_argument("ref", help="Note reference: <id> or <id>#<anchor>")
     parser_locate.add_argument(
-        "--format", choices=["json", "tsv"], default="json",
-        help="Output format (default: json)"
+        "--format", choices=["json", "tsv"], default="json", help="Output format (default: json)"
     )
     parser_locate.add_argument(
-        "--context", type=int, default=0,
-        help="Context lines (reserved for future use)"
+        "--context", type=int, default=0, help="Context lines (reserved for future use)"
     )
-    
+
     # serve command
     parser_serve = subparsers.add_parser("serve", help="Start local JSON API server")
     parser_serve.add_argument(
-        "--host", default="127.0.0.1",
-        help="Host to bind to (default: 127.0.0.1)"
+        "--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)"
     )
     parser_serve.add_argument(
-        "--port", type=int, default=8765,
-        help="Port to bind to (default: 8765)"
+        "--port", type=int, default=8765, help="Port to bind to (default: 8765)"
     )
     parser_serve.add_argument(
-        "--token", default="auto",
-        help="Bearer token (auto|<string>|none, default: auto)"
+        "--token", default="auto", help="Bearer token (auto|<string>|none, default: auto)"
     )
+    parser_serve.add_argument("--cors", action="store_true", help="Enable CORS (default: false)")
     parser_serve.add_argument(
-        "--cors", action="store_true",
-        help="Enable CORS (default: false)"
+        "--openapi", action="store_true", help="Enable OpenAPI docs at /docs (default: false)"
     )
-    parser_serve.add_argument(
-        "--openapi", action="store_true",
-        help="Enable OpenAPI docs at /docs (default: false)"
-    )
-    
+
     # fmt command
     parser_fmt = subparsers.add_parser("fmt", help="Format notes")
     parser_fmt.add_argument(
-        "--frontmatter", action="store_true", default=True,
-        help="Normalize frontmatter (default: true)"
+        "--frontmatter",
+        action="store_true",
+        default=True,
+        help="Normalize frontmatter (default: true)",
     )
     parser_fmt.add_argument(
-        "--links", action="store_true", default=True,
-        help="Normalize link syntax (default: true)"
+        "--links", action="store_true", default=True, help="Normalize link syntax (default: true)"
     )
     parser_fmt.add_argument(
-        "--ids-only", dest="ids_only", action="store_true",
-        help="Collapse [[id|id]] to [[id]]"
+        "--ids-only", dest="ids_only", action="store_true", help="Collapse [[id|id]] to [[id]]"
     )
     parser_fmt.add_argument(
-        "--wrap", type=int, default=0,
-        help="Wrap paragraphs at column N (0=disable, default: 0)"
+        "--wrap", type=int, default=0, help="Wrap paragraphs at column N (0=disable, default: 0)"
     )
     parser_fmt.add_argument(
-        "--eol", choices=["lf", "crlf", "native"],
-        help="Normalize line endings"
+        "--eol", choices=["lf", "crlf", "native"], help="Normalize line endings"
     )
     parser_fmt.add_argument(
-        "--key-order",
-        help="Comma-separated key order (e.g., id,core/title,core/aliases)"
+        "--key-order", help="Comma-separated key order (e.g., id,core/title,core/aliases)"
     )
     parser_fmt.add_argument(
-        "--strip-trailing", dest="strip_trailing", action="store_true", default=True,
-        help="Strip trailing whitespace (default: true)"
+        "--strip-trailing",
+        dest="strip_trailing",
+        action="store_true",
+        default=True,
+        help="Strip trailing whitespace (default: true)",
     )
     parser_fmt.add_argument(
-        "--ensure-final-eol", dest="ensure_final_eol", action="store_true", default=True,
-        help="Ensure final newline (default: true)"
+        "--ensure-final-eol",
+        dest="ensure_final_eol",
+        action="store_true",
+        default=True,
+        help="Ensure final newline (default: true)",
     )
     parser_fmt.add_argument(
-        "--dry-run", dest="dry_run", action="store_true",
-        help="Show changes without writing"
+        "--dry-run", dest="dry_run", action="store_true", help="Show changes without writing"
     )
     parser_fmt.add_argument(
-        "--confirm", action="store_true",
-        help="Required to write changes (unless dry-run)"
+        "--confirm", action="store_true", help="Required to write changes (unless dry-run)"
     )
     parser_fmt.add_argument(
-        "--changed-only", dest="changed_only", action="store_true",
-        help="Only process files that differ"
+        "--changed-only",
+        dest="changed_only",
+        action="store_true",
+        help="Only process files that differ",
     )
-    
+
     # verify-assets command
     parser_verify = subparsers.add_parser("verify-assets", help="Verify asset integrity")
+    parser_verify.add_argument("--assets-dir", help="Assets directory (default: vault/assets/)")
     parser_verify.add_argument(
-        "--assets-dir",
-        help="Assets directory (default: vault/assets/)"
+        "--hashes", action="store_true", help="Compute SHA256 hashes for assets"
     )
     parser_verify.add_argument(
-        "--hashes", action="store_true",
-        help="Compute SHA256 hashes for assets"
+        "--write-sidecars",
+        dest="write_sidecars",
+        action="store_true",
+        help="Write .sha256 sidecar files",
     )
-    parser_verify.add_argument(
-        "--write-sidecars", dest="write_sidecars", action="store_true",
-        help="Write .sha256 sidecar files"
-    )
-    
+
     # fix command
     parser_fix = subparsers.add_parser("fix", help="Apply targeted autofixes")
     parser_fix.add_argument(
-        "--dry-run", dest="dry_run", action="store_true",
-        help="Show changes without writing"
+        "--dry-run", dest="dry_run", action="store_true", help="Show changes without writing"
     )
-    
+
     # import command
     parser_import = subparsers.add_parser("import", help="Import Markdown notes")
     import_sub = parser_import.add_subparsers(dest="import_cmd", required=True)
-    
+
     # import plan
     parser_import_plan = import_sub.add_parser("plan", help="Scan source and build import plan")
     parser_import_plan.add_argument("src", help="Source directory to scan")
     parser_import_plan.add_argument(
-        "--glob", default="**/*.md",
-        help="File glob pattern (default: **/*.md)"
+        "--glob", default="**/*.md", help="File glob pattern (default: **/*.md)"
+    )
+    parser_import_plan.add_argument("--map", help="Output path for plan JSON file")
+    parser_import_plan.add_argument("--csv", help="Output path for plan CSV file")
+    parser_import_plan.add_argument(
+        "--id-by",
+        choices=["random", "hash", "slug"],
+        default="random",
+        help="ID generation strategy (default: random)",
     )
     parser_import_plan.add_argument(
-        "--map", help="Output path for plan JSON file"
+        "--title-key", default="core/title", help="Frontmatter key for title (default: core/title)"
     )
     parser_import_plan.add_argument(
-        "--csv", help="Output path for plan CSV file"
+        "--alias-keys",
+        default=None,
+        help="Comma-separated frontmatter keys for aliases (default: core/aliases,aliases)",
     )
-    parser_import_plan.add_argument(
-        "--id-by", choices=["random", "hash", "slug"], default="random",
-        help="ID generation strategy (default: random)"
-    )
-    parser_import_plan.add_argument(
-        "--title-key", default="core/title",
-        help="Frontmatter key for title (default: core/title)"
-    )
-    parser_import_plan.add_argument(
-        "--alias-keys", default=None,
-        help="Comma-separated frontmatter keys for aliases (default: core/aliases,aliases)"
-    )
-    parser_import_plan.add_argument(
-        "--strict", action="store_true",
-        help="Fail on any conflicts"
-    )
-    
+    parser_import_plan.add_argument("--strict", action="store_true", help="Fail on any conflicts")
+
     # import apply
     parser_import_apply = import_sub.add_parser("apply", help="Execute import")
     parser_import_apply.add_argument("src", help="Source directory")
     parser_import_apply.add_argument("dst_vault", help="Destination vault directory")
+    parser_import_apply.add_argument("--plan", help="Path to plan JSON file (optional)")
     parser_import_apply.add_argument(
-        "--plan", help="Path to plan JSON file (optional)"
+        "--move", action="store_true", help="Move files instead of copy"
     )
     parser_import_apply.add_argument(
-        "--move", action="store_true",
-        help="Move files instead of copy"
+        "--dry-run", action="store_true", help="Print changes without writing"
     )
     parser_import_apply.add_argument(
-        "--dry-run", action="store_true",
-        help="Print changes without writing"
+        "--confirm", action="store_true", help="Required to proceed (unless dry-run)"
     )
     parser_import_apply.add_argument(
-        "--confirm", action="store_true",
-        help="Required to proceed (unless dry-run)"
+        "--on-conflict",
+        choices=["skip", "new-id", "fail"],
+        default="fail",
+        help="How to handle existing files (default: fail)",
     )
-    parser_import_apply.add_argument(
-        "--on-conflict", choices=["skip", "new-id", "fail"], default="fail",
-        help="How to handle existing files (default: fail)"
-    )
-    
+
     # import rollback
     parser_import_rollback = import_sub.add_parser("rollback", help="Rollback import")
     parser_import_rollback.add_argument(
-        "--manifest", default=".hypo/import-manifest.json",
-        help="Path to manifest file (default: .hypo/import-manifest.json)"
+        "--manifest",
+        default=".hypo/import-manifest.json",
+        help="Path to manifest file (default: .hypo/import-manifest.json)",
     )
     parser_import_rollback.add_argument(
-        "--dry-run", action="store_true",
-        help="Print changes without writing"
+        "--dry-run", action="store_true", help="Print changes without writing"
     )
     parser_import_rollback.add_argument(
-        "--confirm", action="store_true",
-        help="Required to proceed (unless dry-run)"
+        "--confirm", action="store_true", help="Required to proceed (unless dry-run)"
     )
-    
+
     # migrate command
     parser_migrate = subparsers.add_parser("migrate", help="Migrate links")
     migrate_sub = parser_migrate.add_subparsers(dest="migrate_cmd", required=True)
-    
+
     # migrate links
     parser_migrate_links = migrate_sub.add_parser("links", help="Migrate wiki/MD links to IDs")
     parser_migrate_links.add_argument(
-        "--dry-run", action="store_true",
-        help="Print unified diff without writing"
+        "--dry-run", action="store_true", help="Print unified diff without writing"
     )
     parser_migrate_links.add_argument(
-        "--confirm", action="store_true",
-        help="Required to proceed (unless dry-run)"
+        "--confirm", action="store_true", help="Required to proceed (unless dry-run)"
     )
     parser_migrate_links.add_argument(
-        "--from", dest="from_format", choices=["wiki", "md", "mixed"], default="mixed",
-        help="Source link format (default: mixed)"
+        "--from",
+        dest="from_format",
+        choices=["wiki", "md", "mixed"],
+        default="mixed",
+        help="Source link format (default: mixed)",
     )
     parser_migrate_links.add_argument(
-        "--resolver", choices=["title", "alias", "both"], default="both",
-        help="Resolution strategy (default: both)"
+        "--resolver",
+        choices=["title", "alias", "both"],
+        default="both",
+        help="Resolution strategy (default: both)",
     )
     parser_migrate_links.add_argument(
-        "--prefer", choices=["alias", "title"], default="alias",
-        help="Preference when both match (default: alias)"
+        "--prefer",
+        choices=["alias", "title"],
+        default="alias",
+        help="Preference when both match (default: alias)",
     )
-    
+
     # audit command
     parser_audit = subparsers.add_parser("audit", help="Audit vault integrity")
     audit_sub = parser_audit.add_subparsers(dest="audit_cmd", required=True)
-    
+
     # audit links
     parser_audit_links = audit_sub.add_parser("links", help="Audit link integrity")
     parser_audit_links.add_argument(
-        "--strict", action="store_true",
-        help="Treat un-migrated links as errors"
+        "--strict", action="store_true", help="Treat un-migrated links as errors"
     )
-    
+
     args = parser.parse_args()
-    
+
     # Handle --version flag (doesn't require runtime)
     if args.version:
         sys.exit(cmd_version(args))
-    
+
     # If no command specified, show help
     if not args.cmd:
         parser.print_help()
         sys.exit(1)
-    
+
     # Build runtime
     rt = build_runtime(
         vault_path=args.vault,
         db_path=args.db,
         config_path=args.config,
     )
-    
+
     # Dispatch to command handlers
     handlers = {
         "id": cmd_id,
@@ -1717,7 +1672,7 @@ def main() -> None:
         "verify-assets": cmd_verify_assets,
         "fix": cmd_fix,
     }
-    
+
     # Handle meta subcommand
     if args.cmd == "meta":
         meta_handlers = {
@@ -1749,7 +1704,7 @@ def main() -> None:
         handler = audit_handlers.get(args.audit_cmd)
     else:
         handler = handlers.get(args.cmd)
-    
+
     if handler:
         try:
             exit_code = handler(args, rt)
