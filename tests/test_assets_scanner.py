@@ -1,6 +1,5 @@
 """Tests for asset scanner."""
 
-import pytest
 from pathlib import Path
 
 from hypomnemata.assets.scanner import scan_asset_refs

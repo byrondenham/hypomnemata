@@ -1,6 +1,5 @@
 """Tests for text hygiene."""
 
-import pytest
 
 from hypomnemata.format.text import normalize_text
 

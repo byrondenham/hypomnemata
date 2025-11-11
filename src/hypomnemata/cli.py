@@ -3,11 +3,13 @@
 import argparse
 import json
 import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .core.meta import MetaBag
 from .core.model import Anchor, Note
 from .core.slicer import slice_by_anchor
@@ -15,6 +17,22 @@ from .export.quartz import QuartzAdapter
 from .lint import DeadLinksRule, Finding
 from .locate import cmd_locate
 from .runtime import build_runtime
+
+
+def cmd_version(args: argparse.Namespace, rt: Any = None) -> int:
+    """Print version information."""
+    # Get Python version
+    py_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    
+    # Get platform
+    plat = platform.system().lower()
+    
+    # Get commit SHA from environment (injected by CI) or fallback to "unknown"
+    commit = os.environ.get("GIT_SHA", "unknown")
+    
+    # Print version info
+    print(f"hypomnemata {__version__} (python {py_version} / platform {plat} / commit {commit})")
+    return 0
 
 
 def cmd_reindex(args: argparse.Namespace, rt: Any) -> int:
@@ -1135,7 +1153,6 @@ def cmd_fmt(args: argparse.Namespace, rt: Any) -> int:
     
     # Filter to changed only if requested
     if args.changed_only:
-        from .format.formatter import compute_file_hash
         # We'll check as we format
         pass
     
@@ -1225,6 +1242,11 @@ def main() -> None:
         prog="hypo", description="Hypomnemata CLI"
     )
     parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Show version information",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -1249,7 +1271,7 @@ def main() -> None:
         "--json", action="store_true", help="Machine-readable output"
     )
     
-    subparsers = parser.add_subparsers(dest="cmd", required=True)
+    subparsers = parser.add_subparsers(dest="cmd", required=False)
     
     # id command
     subparsers.add_parser("id", help="Print a new random ID")
@@ -1611,6 +1633,15 @@ def main() -> None:
     )
     
     args = parser.parse_args()
+    
+    # Handle --version flag (doesn't require runtime)
+    if args.version:
+        sys.exit(cmd_version(args))
+    
+    # If no command specified, show help
+    if not args.cmd:
+        parser.print_help()
+        sys.exit(1)
     
     # Build runtime
     rt = build_runtime(
