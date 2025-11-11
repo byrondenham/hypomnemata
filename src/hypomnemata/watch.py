@@ -13,11 +13,11 @@ try:
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
-    FileSystemEventHandler = object  # type: ignore
-    FileSystemEvent = Any  # type: ignore
+    FileSystemEventHandler = object  # type: ignore[misc,assignment]
+    FileSystemEvent = Any  # type: ignore[misc,assignment]
 
 
-class DebounceHandler(FileSystemEventHandler):  # type: ignore
+class DebounceHandler(FileSystemEventHandler):
     """File system event handler with debouncing."""
     
     def __init__(self, vault_path: Path, on_batch: Any, debounce_ms: int = 150):
@@ -62,7 +62,7 @@ class DebounceHandler(FileSystemEventHandler):  # type: ignore
         if event.is_directory:
             return
         
-        path = Path(event.src_path)
+        path = Path(str(event.src_path))
         note_id = self._extract_id(path)
         if note_id:
             self.added.add(note_id)
@@ -73,7 +73,7 @@ class DebounceHandler(FileSystemEventHandler):  # type: ignore
         if event.is_directory:
             return
         
-        path = Path(event.src_path)
+        path = Path(str(event.src_path))
         note_id = self._extract_id(path)
         if note_id:
             self.modified.add(note_id)
@@ -84,7 +84,7 @@ class DebounceHandler(FileSystemEventHandler):  # type: ignore
         if event.is_directory:
             return
         
-        path = Path(event.src_path)
+        path = Path(str(event.src_path))
         note_id = self._extract_id(path)
         if note_id:
             self.deleted.add(note_id)

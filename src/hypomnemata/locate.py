@@ -36,7 +36,7 @@ def locate_note(
     anchor: Anchor | None,
     format_type: str = "json",
     context: int = 0,
-) -> dict[str, Any] | str:
+) -> dict[str, Any]:
     """
     Get precise location information for a note or anchor.
     
@@ -47,7 +47,7 @@ def locate_note(
         context: Number of context lines (unused, reserved for future)
     
     Returns:
-        Location information as dict (for JSON) or TSV string
+        Location information as dict (for JSON) or TSV string as dict with "tsv" key
     """
     # Get the range for the note/anchor
     start, end = slice_by_anchor(note, anchor)
@@ -61,7 +61,7 @@ def locate_note(
     end_line = char_offset_to_line(note.body.raw, end)
     
     # Build result
-    result = {
+    result: dict[str, Any] = {
         "id": note.id,
         "range": {"start": start, "end": end},
         "lines": {"start": start_line, "end": end_line},
@@ -75,8 +75,9 @@ def locate_note(
         }
     
     if format_type == "tsv":
-        # Format as tab-separated values
-        return f"{note.id}\t{start}\t{end}\t{start_line}\t{end_line}"
+        # Format as tab-separated values wrapped in dict
+        tsv_str = f"{note.id}\t{start}\t{end}\t{start_line}\t{end_line}"
+        return {"tsv": tsv_str}
     
     return result
 
@@ -137,6 +138,7 @@ def cmd_locate(args: Any, rt: Any) -> int:
         print(json.dumps(location, indent=2))
     else:
         # TSV format: id, path, start, end, start_line, end_line
-        print(f"{nid}\t{note_path.absolute()}\t{location}", end="")
+        tsv_data = location.get("tsv", "")
+        print(f"{nid}\t{note_path.absolute()}\t{tsv_data}", end="")
     
     return 0

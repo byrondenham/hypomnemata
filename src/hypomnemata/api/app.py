@@ -21,14 +21,14 @@ except ImportError:
     def _stub_security(x: Any) -> Any:
         return x
     
-    FastAPI = object  # type: ignore
-    Depends = _stub_depends  # type: ignore
-    HTTPException = Exception  # type: ignore
-    Query = _stub_query  # type: ignore
-    Security = _stub_security  # type: ignore
-    HTTPAuthorizationCredentials = object  # type: ignore
-    HTTPBearer = object  # type: ignore
-    CORSMiddleware = object  # type: ignore
+    FastAPI = object  # type: ignore[misc,assignment]
+    Depends = _stub_depends  # type: ignore[assignment]
+    HTTPException = Exception  # type: ignore[misc,assignment]
+    Query = _stub_query
+    Security = _stub_security  # type: ignore[assignment]
+    HTTPAuthorizationCredentials = object  # type: ignore[misc,assignment]
+    HTTPBearer = object  # type: ignore[misc,assignment]
+    CORSMiddleware = object  # type: ignore[misc,assignment]
 
 from ..core.model import Anchor
 from ..core.slicer import slice_by_anchor
@@ -73,13 +73,15 @@ def create_app(runtime: Any, token: str | None = None, enable_cors: bool = False
         security_scheme = HTTPBearer(auto_error=False)
         
         async def verify_token(
-            credentials: HTTPAuthorizationCredentials | None = Security(security_scheme)  # type: ignore  # noqa: B008
+            credentials: HTTPAuthorizationCredentials | None = Security(security_scheme)  # noqa: B008
         ) -> None:
             """Verify bearer token."""
             if credentials is None or credentials.credentials != token:
                 raise HTTPException(status_code=401, detail="Invalid or missing token")
     else:
-        async def verify_token() -> None:  # type: ignore
+        async def verify_token(
+            credentials: HTTPAuthorizationCredentials | None = None
+        ) -> None:
             """No-op when auth is disabled."""
             return None
     
@@ -167,12 +169,13 @@ def create_app(runtime: Any, token: str | None = None, enable_cors: bool = False
         # Get location
         location = locate_note(note, anchor_obj, format_type="json")
         
-        if not location:
+        if not location or "id" not in location:
             raise HTTPException(status_code=404, detail=f"Anchor {anchor} not found")
         
         # Add path
         note_path = runtime.vault.storage._path(id)
-        location["path"] = str(note_path.absolute())
+        if "path" not in location:
+            location["path"] = str(note_path.absolute())
         
         return location
     

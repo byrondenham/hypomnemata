@@ -3,7 +3,6 @@
 import tempfile
 import time
 from pathlib import Path
-from threading import Thread
 
 import pytest
 
@@ -16,7 +15,7 @@ from hypomnemata.core.model import Note
 from hypomnemata.core.vault import Vault
 
 try:
-    from hypomnemata.watch import watch_vault, WATCHDOG_AVAILABLE
+    from hypomnemata.watch import WATCHDOG_AVAILABLE
 except ImportError:
     WATCHDOG_AVAILABLE = False
 

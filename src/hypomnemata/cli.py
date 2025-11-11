@@ -809,7 +809,7 @@ def cmd_watch(args: argparse.Namespace, rt: Any) -> int:
 def cmd_serve(args: argparse.Namespace, rt: Any) -> int:
     """Start local JSON API server."""
     try:
-        import uvicorn  # type: ignore
+        import uvicorn
 
         from .api.app import create_app, generate_token
     except ImportError as e:

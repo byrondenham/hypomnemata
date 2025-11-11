@@ -7,6 +7,7 @@ import pytest
 
 try:
     from fastapi.testclient import TestClient
+
     from hypomnemata.api.app import create_app, generate_token
     FASTAPI_AVAILABLE = True
 except ImportError:
