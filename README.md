@@ -14,11 +14,55 @@ A zettelkasten note-taking system with flat storage, random IDs, wiki-style link
 - **Quartz export**: Export to Quartz static site format
 - **CLI-first**: Full-featured command-line interface
 
+## Installation
+
+### pipx (Recommended)
+
+[pipx](https://pipx.pypa.io/) installs the tool in an isolated environment:
+
+```bash
+pipx install hypomnemata
+```
+
+### pip
+
+```bash
+pip install hypomnemata
+```
+
+### Single-File Executable
+
+Download the latest `.pyz` file for your platform from the [releases page](https://github.com/byrondenham/hypomnemata/releases):
+
+```bash
+# Linux/macOS
+curl -L -o hypo.pyz https://github.com/byrondenham/hypomnemata/releases/latest/download/hypo-linux-x86_64.pyz
+python hypo.pyz --version
+
+# Make it executable (Linux/macOS)
+chmod +x hypo.pyz
+./hypo.pyz --version
+
+# Windows
+curl -L -o hypo.pyz https://github.com/byrondenham/hypomnemata/releases/latest/download/hypo-windows.pyz
+python hypo.pyz --version
+```
+
+### From Source
+
+```bash
+git clone https://github.com/byrondenham/hypomnemata.git
+cd hypomnemata
+pip install -e .
+```
+
+For detailed installation instructions, see [INSTALL.md](INSTALL.md).
+
 ## Quick Start
 
 ```bash
-# Install
-pip install -e .
+# Check version
+hypo --version
 
 # Create a note
 hypo new --title "My First Note"
@@ -241,6 +285,24 @@ hypo export quartz ./site --assets-dir vault/assets
 
 See [CLI_DEMO.md](CLI_DEMO.md) for comprehensive examples and usage.
 
+## Upgrading
+
+### pipx
+
+```bash
+pipx upgrade hypomnemata
+```
+
+### pip
+
+```bash
+pip install --upgrade hypomnemata
+```
+
+### Single-File Executable
+
+Download the latest version from the [releases page](https://github.com/byrondenham/hypomnemata/releases) and replace your existing file.
+
 ## Design Principles
 
 1. **Flat files**: Notes are plain Markdown files
@@ -250,6 +312,8 @@ See [CLI_DEMO.md](CLI_DEMO.md) for comprehensive examples and usage.
 5. **Scriptable**: JSON output for automation
 
 ## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
 
 ```bash
 # Install dev dependencies
