@@ -62,18 +62,20 @@ def extract_metadata(file_path: Path, title_key: str = "core/title",
         
         if body:
             lines = body.split('\n')
+            # First pass: look for H1 heading
             for line in lines:
                 line = line.strip()
                 if line.startswith('# '):
                     # First H1 heading
                     title = line[2:].strip()
                     break
-                elif line and not line.startswith('#'):
-                    # First non-empty, non-heading line
-                    title = line[:100]  # Limit length
-                    break
+            
+            # If no heading found, fallback to filename first
+            # (per test expectation - filename is more meaningful than random content)
+            if not title:
+                title = file_path.stem
     
-    # Fallback to filename if still no title
+    # Final fallback to filename if still no title
     if not title:
         title = file_path.stem
     

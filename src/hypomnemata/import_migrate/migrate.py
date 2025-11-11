@@ -39,22 +39,22 @@ def resolve_target(
     conn = index._conn()
     try:
         # Check aliases
-        alias_ids = []
+        alias_ids: list[str] = []
         if resolver_mode in ("alias", "both"):
             alias_rows = conn.execute(
                 "SELECT note_id FROM kv WHERE key = 'core/alias' AND value = ?",
                 (text,)
             ).fetchall()
-            alias_ids = [row[0] for row in alias_rows]
+            alias_ids = [str(row[0]) for row in alias_rows]
         
         # Check titles
-        title_ids = []
+        title_ids: list[str] = []
         if resolver_mode in ("title", "both"):
             title_rows = conn.execute(
                 "SELECT id FROM notes WHERE title = ?",
                 (text,)
             ).fetchall()
-            title_ids = [row[0] for row in title_rows]
+            title_ids = [str(row[0]) for row in title_rows]
         
         # Determine result
         if len(alias_ids) == 1 and not title_ids:

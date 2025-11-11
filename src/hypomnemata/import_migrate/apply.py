@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 
@@ -30,7 +30,7 @@ def inject_frontmatter(
         Content with updated frontmatter
     """
     # Parse existing frontmatter if present
-    existing_meta = {}
+    existing_meta: dict[str, Any] = {}
     body_start = 0
     
     if content.startswith("---\n"):
@@ -38,7 +38,8 @@ def inject_frontmatter(
         if end_idx > 0:
             frontmatter_str = content[4:end_idx]
             try:
-                existing_meta = yaml.safe_load(frontmatter_str) or {}
+                loaded = yaml.safe_load(frontmatter_str)
+                existing_meta = loaded if isinstance(loaded, dict) else {}
             except yaml.YAMLError:
                 existing_meta = {}
             body_start = end_idx + 5
@@ -143,7 +144,7 @@ def apply_import(
         
         # Record manifest entry
         manifest.entries.append(ManifestEntry(
-            action=operation,  # type: ignore
+            action=operation,
             src=str(src_path) if operation in ("move", "copy") else None,
             dst=str(dst_path),
             backup=str(backup_path) if backup_path else None,

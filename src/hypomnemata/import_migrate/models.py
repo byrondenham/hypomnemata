@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 
@@ -24,7 +24,7 @@ class ImportPlan:
     """Complete import plan with metadata."""
     
     version: int = 1
-    generated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     src: str = ""  # Source directory path
     id_strategy: Literal["random", "hash", "slug"] = "random"
     items: list[ImportItem] = field(default_factory=list)
@@ -46,7 +46,7 @@ class ImportManifest:
     """Manifest for tracking import operations to enable rollback."""
     
     version: int = 1
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     src_dir: str = ""
     dst_vault: str = ""
     operation: Literal["move", "copy"] = "copy"

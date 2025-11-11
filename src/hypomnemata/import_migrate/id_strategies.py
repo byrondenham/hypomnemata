@@ -13,8 +13,8 @@ class RandomIdGenerator:
     def __init__(self, nbytes: int = 6):
         self.nbytes = nbytes
     
-    def generate(self, source_path: str) -> str:
-        """Generate a random hex ID."""
+    def generate(self, source_path: str, content: str | None = None) -> str:
+        """Generate a random hex ID (ignores source_path and content)."""
         return secrets.token_hex(self.nbytes)
 
 
@@ -44,8 +44,8 @@ class SlugIdGenerator:
     def __init__(self, max_length: int = 50):
         self.max_length = max_length
     
-    def generate(self, source_path: str) -> str:
-        """Generate a slug-based ID from the filename."""
+    def generate(self, source_path: str, content: str | None = None) -> str:
+        """Generate a slug-based ID from the filename (ignores content)."""
         path = Path(source_path)
         # Use stem (filename without extension)
         stem = path.stem
@@ -58,7 +58,7 @@ class SlugIdGenerator:
         return slug
 
 
-def get_id_generator(strategy: str, nbytes: int = 6):
+def get_id_generator(strategy: str, nbytes: int = 6) -> RandomIdGenerator | HashIdGenerator | SlugIdGenerator:
     """Factory function to get ID generator based on strategy."""
     if strategy == "random":
         return RandomIdGenerator(nbytes=nbytes)
